@@ -347,7 +347,11 @@
           </div>
 
           <div class="mb-5">
-            <input type="text" id="mealDescInput" placeholder="Describe meal: e.g., '2.5 mooli paratha + 2 bowls curd + 2 appalam'"
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Food Items & Quantities (Text-Only Supported)</label>
+              <span class="text-[10px] font-semibold text-emerald-300/85">No photo? Type items & qty</span>
+            </div>
+            <input type="text" id="mealDescInput" placeholder="e.g., '2 idli, 1 bowl sambar, 1 vada' or '2.5 mooli paratha + 2 curd'"
               class="studio-input w-full rounded-2xl px-4 py-3 text-xs font-medium" />
           </div>
 
@@ -393,6 +397,16 @@
               <p class="text-[10px] text-zinc-500">Tap ⋮ or long-press any card to edit portions, duplicate, or delete</p>
             </div>
             <input type="date" id="trackerFilterDate" onchange="renderTrackerLists()" class="studio-input font-mono-num text-xs font-bold rounded-xl px-3 py-1.5" />
+          </div>
+          <div id="bgSyncBanner" class="hidden studio-card-mint rounded-2xl p-3.5 flex items-center justify-between gap-3">
+            <div class="text-xs text-emerald-100">
+              <div class="font-bold">Still processing on Google Servers</div>
+              <div class="text-[10px] text-zinc-400 mt-0.5">Photo won't be re-uploaded. Tap Sync once the row appears in Sheets.</div>
+            </div>
+            <button type="button" onclick="syncAllData(); document.getElementById('bgSyncBanner').classList.add('hidden');"
+              class="btn-vitality text-[10px] uppercase tracking-wider px-3.5 py-2 rounded-xl flex-shrink-0">
+              ↻ Sync Now
+            </button>
           </div>
           <div id="mealLogsList" class="space-y-3.5"></div>
         </section>
@@ -1168,7 +1182,7 @@
       }
     }
 
-    async function postToBackend(payload, timeoutMs = 60000) {
+    async function postToBackend(payload, timeoutMs = 120000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -1181,7 +1195,9 @@
         return await res.json();
       } catch (err) {
         if (err.name === "AbortError") {
-          throw new Error("Request timed out after 60s — please try again.");
+          const backgroundErr = new Error("Taking longer than 2 mins — Apps Script may still be finishing in the background.");
+          backgroundErr.isBackgroundTimeout = true;
+          throw backgroundErr;
         }
         throw err;
       } finally {
@@ -1543,24 +1559,52 @@
       const description = document.getElementById("mealDescInput").value.trim();
 
       if (!compressedBase64 && !description) {
-        return alert("Please upload a food photo or enter a meal description.");
+        return alert("Please upload a food photo or type the food items and quantities.");
       }
 
       const duplicateFor = Array.from(document.querySelectorAll('input[name="dupMemberCheck"]:checked')).map(cb => cb.value);
-
       const btn = document.getElementById("submitMealBtn");
+      const meter = document.getElementById("photoStatusMeter");
       btn.disabled = true;
-      btn.textContent = duplicateFor.length > 0
-        ? `Uploading Photo, Scanning Macros & Saving (${1 + duplicateFor.length})...`
-        : "Uploading Photo & Scanning Macros...";
+
+      let uploadedPhotoUrl = "";
 
       try {
+        // STAGE 1: Upload photo to Google Drive first (if a photo is selected)
+        if (compressedBase64 && compressedMime) {
+          btn.textContent = "Stage 1/2: Uploading Photo to Drive...";
+          if (meter) {
+            meter.innerHTML = `<span>⏳ Stage 1/2: Uploading photo to Drive...</span><span class="text-emerald-300">In progress</span>`;
+          }
+          const upRes = await postToBackend({
+            action: "uploadPhoto",
+            date, member, meal,
+            imageBase64: compressedBase64,
+            mimeType: compressedMime
+          }, 60000);
+
+          if (upRes.status === "error") {
+            throw new Error(upRes.message || "Photo upload failed");
+          }
+          uploadedPhotoUrl = upRes.photoUrl || "";
+          if (meter) {
+            meter.innerHTML = `<span>✓ Stage 1/2 Complete: Photo in Drive</span><span class="text-emerald-300">Analyzing next...</span>`;
+          }
+        }
+
+        // STAGE 2: Analyze macros via Gemini & write row(s) to Google Sheet
+        btn.textContent = duplicateFor.length > 0
+          ? `Stage 2/2: Analyzing Macros & Saving (${1 + duplicateFor.length})...`
+          : "Stage 2/2: Analyzing Macros via AI...";
+
         const res = await postToBackend({
-          action: "addMeal",
+          action: "analyzeMealRecord",
           member, meal, date, description, duplicateFor,
-          imageBase64: compressedBase64,
-          mimeType: compressedMime
-        });
+          photoUrl: uploadedPhotoUrl,
+          imageBase64: uploadedPhotoUrl ? "" : compressedBase64,
+          mimeType: uploadedPhotoUrl ? "" : compressedMime
+        }, 120000);
+
         if (res.status === "error") return alert(res.message);
 
         if (Array.isArray(res.entries) && res.entries.length > 0) {
@@ -1568,6 +1612,7 @@
         } else if (Array.isArray(res.meals)) {
           mealLogs = res.meals;
         }
+        document.getElementById("bgSyncBanner")?.classList.add("hidden");
         clearSelectedPhoto();
         document.getElementById("mealDescInput").value = "";
         document.querySelectorAll('input[name="dupMemberCheck"]').forEach(cb => cb.checked = false);
@@ -1576,7 +1621,12 @@
         renderTrackerLists();
         showToast(duplicateFor.length > 0 ? `Saved for ${member} + ${duplicateFor.join(", ")}!` : "Meal logged!");
       } catch (err) {
-        alert("Failed to log meal: " + err.message);
+        if (err.isBackgroundTimeout) {
+          document.getElementById("bgSyncBanner")?.classList.remove("hidden");
+          showToast("Still running in background — tap Sync Now shortly");
+        } else {
+          alert("Failed to log meal: " + err.message);
+        }
       } finally {
         btn.disabled = false;
         btn.textContent = "Analyze Macros & Save Entry";
