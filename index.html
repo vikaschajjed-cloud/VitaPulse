@@ -2336,33 +2336,79 @@
     let lightboxIndex = 0;
     let lightboxMealId = "";
 
-    function compressImageToBase64(file, maxDim = 900, quality = 0.78) {
+    function estimateBase64Bytes(base64Str) {
+      if (!base64Str) return 0;
+      const clean = base64Str.replace(/=+$/, "");
+      return Math.floor((clean.length * 3) / 4);
+    }
+
+    function compressImageToBase64(file, targetMinKb = 48, targetMaxKb = 60) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = ev => {
           const img = new Image();
           img.onload = () => {
-            let w = img.width;
-            let h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) {
-                h = Math.round((h * maxDim) / w);
-                w = maxDim;
-              } else {
-                w = Math.round((w * maxDim) / h);
-                h = maxDim;
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            const maxTargetBytes = targetMaxKb * 1024;
+            const minTargetBytes = targetMinKb * 1024;
+
+            let bestDataUrl = "";
+            let bestBase64 = "";
+            let bestKb = 0;
+
+            const dimSteps = [640, 520, 420, 340];
+            for (let dIdx = 0; dIdx < dimSteps.length; dIdx++) {
+              const maxDim = dimSteps[dIdx];
+              let w = img.width;
+              let h = img.height;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.max(1, Math.round((h * maxDim) / w));
+                  w = maxDim;
+                } else {
+                  w = Math.max(1, Math.round((w * maxDim) / h));
+                  h = maxDim;
+                }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              ctx.clearRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
+
+              for (let q = 0.78; q >= 0.30; q -= 0.08) {
+                const quality = Number(q.toFixed(2));
+                const dataUrl = canvas.toDataURL("image/jpeg", quality);
+                const b64 = dataUrl.split(",")[1] || "";
+                const kb = Math.round(estimateBase64Bytes(b64) / 1024);
+
+                if (!bestDataUrl || Math.abs(kb - 55) < Math.abs(bestKb - 55)) {
+                  bestDataUrl = dataUrl;
+                  bestBase64 = b64;
+                  bestKb = kb;
+                }
+
+                if (kb >= targetMinKb && kb <= targetMaxKb) {
+                  resolve({
+                    dataUrl,
+                    base64: b64,
+                    mimeType: "image/jpeg",
+                    sizeKb: kb
+                  });
+                  return;
+                }
+              }
+
+              if (bestKb <= maxTargetBytes / 1024 && bestKb >= minTargetBytes / 1024) {
+                break;
               }
             }
-            const canvas = document.createElement("canvas");
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL("image/jpeg", quality);
+
             resolve({
-              dataUrl,
-              base64: dataUrl.split(",")[1],
-              mimeType: "image/jpeg"
+              dataUrl: bestDataUrl,
+              base64: bestBase64,
+              mimeType: "image/jpeg",
+              sizeKb: bestKb
             });
           };
           img.onerror = reject;
@@ -2408,10 +2454,10 @@
     async function handleMultiPhotoSelect(event) {
       const files = Array.from(event.target.files || []);
       if (files.length === 0) return;
-      showToast(`Preparing ${files.length} photo${files.length > 1 ? "s" : ""}...`);
+      showToast(`Compressing to ~55 KB...`);
       pendingCompressedImages = [];
       for (const f of files) {
-        const comp = await compressImageToBase64(f, 900, 0.78);
+        const comp = await compressImageToBase64(f, 48, 60);
         pendingCompressedImages.push(comp);
       }
       const grid = document.getElementById("selectedNewPhotosGrid");
@@ -2419,7 +2465,7 @@
       grid.innerHTML = pendingCompressedImages.map((imgObj, idx) => `
         <div class="relative aspect-square rounded-2xl overflow-hidden border border-cyan-400/35 bg-black/40">
           <img src="${imgObj.dataUrl}" class="w-full h-full object-cover" />
-          <span class="absolute bottom-1 left-1 font-mono-num text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-cyan-200">#${idx + 1}</span>
+          <span class="absolute bottom-1 left-1 font-mono-num text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/75 text-cyan-200">#${idx + 1} • ${imgObj.sizeKb || 55}KB</span>
         </div>
       `).join("");
     }
