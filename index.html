@@ -1076,8 +1076,32 @@
     Chart.defaults.borderColor = "rgba(255, 255, 255, 0.07)";
     Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
 
+    function getLocalDateStr(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const yr = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const da = String(d.getDate()).padStart(2, "0");
+      return `${yr}-${mo}-${da}`;
+    }
+
+    function normalizeDateStr(val) {
+      if (!val) return "";
+      const s = String(val).trim();
+      const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (m) return m[1];
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        const yr = dt.getFullYear();
+        const mo = String(dt.getMonth() + 1).padStart(2, "0");
+        const da = String(dt.getDate()).padStart(2, "0");
+        return `${yr}-${mo}-${da}`;
+      }
+      return s.slice(0, 10);
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getLocalDateStr(0);
       document.getElementById("mealDateInput").value = today;
       document.getElementById("fitDateInput").value = today;
       document.getElementById("trackerFilterDate").value = today;
@@ -1194,16 +1218,25 @@
           openSettings();
           return;
         }
-        mealLogs = data.meals || [];
-        fitnessLogs = data.fitness || [];
+        mealLogs = (data.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
+        fitnessLogs = (data.fitness || []).map(f => ({ ...f, date: normalizeDateStr(f.date) }));
         progressPlan = data.progressPlan || [];
         profiles = data.profiles && data.profiles.length > 0 ? data.profiles : [
           { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "" },
           { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "" }
         ];
 
-        if (mealLogs.length > 0 && !mealLogs.some(m => m.date === document.getElementById("trackerFilterDate").value)) {
-          document.getElementById("trackerFilterDate").value = mealLogs[0].date;
+        const todayStr = getLocalDateStr(0);
+        const curFilterEl = document.getElementById("trackerFilterDate");
+        const mealFormDateEl = document.getElementById("mealDateInput");
+        if (mealLogs.length > 0) {
+          if (mealLogs.some(m => m.date === todayStr)) {
+            curFilterEl.value = todayStr;
+            if (mealFormDateEl && !mealFormDateEl.value) mealFormDateEl.value = todayStr;
+          } else if (!mealLogs.some(m => m.date === curFilterEl.value)) {
+            curFilterEl.value = mealLogs[0].date;
+            if (mealFormDateEl) mealFormDateEl.value = mealLogs[0].date;
+          }
         }
 
         populateMemberUI();
@@ -1583,7 +1616,7 @@
       document.getElementById("manMealDate").value =
         document.getElementById("mealDateInput")?.value ||
         document.getElementById("trackerFilterDate").value ||
-        new Date().toISOString().split("T")[0];
+        getLocalDateStr(0);
       manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
       renderManualDetailRows();
       document.getElementById("manNotes").value = "";
@@ -2163,9 +2196,10 @@
         summaryEl.textContent = `${whoText} • ${whenText} — Tap ⋮ or long-press a card to edit or duplicate`;
       }
 
+      const targetNormDate = normalizeDateStr(filterDate);
       const filteredMeals = mealLogs.filter(m =>
         (selectedMember === "All" || m.member === selectedMember) &&
-        (!applyDateFilter || m.date === filterDate)
+        (!applyDateFilter || normalizeDateStr(m.date) === targetNormDate)
       );
 
       let cal = 0, pro = 0, carb = 0, fat = 0, fib = 0;
@@ -2187,7 +2221,7 @@
 
       const filteredFitForDate = fitnessLogs.filter(f =>
         (selectedMember === "All" || f.member === selectedMember) &&
-        (!filterDate || f.date === filterDate)
+        (!applyDateFilter || normalizeDateStr(f.date) === targetNormDate)
       );
       const dayExerciseBurn = filteredFitForDate.reduce((s, f) => s + (Number(f.caloriesBurned) || 0), 0);
 
@@ -2323,9 +2357,7 @@
         return memberFiltered.filter(r => r.date === exactDate);
       }
       if (pType === "week") {
-        const sevenAgo = new Date();
-        sevenAgo.setDate(sevenAgo.getDate() - 7);
-        const startStr = sevenAgo.toISOString().split("T")[0];
+        const startStr = getLocalDateStr(-7);
         document.getElementById("analyticsRangeLabel").textContent = "Last 7 Days";
         return memberFiltered.filter(r => r.date >= startStr);
       }
