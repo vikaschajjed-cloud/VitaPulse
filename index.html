@@ -988,6 +988,8 @@
     let editingMealItemsState = [];
     let compressedBase64 = "";
     let compressedMime = "";
+    let cachedUploadedPhotoUrl = "";
+    let cachedPhotoSignature = "";
     let charts = {};
 
     const CARDIO_ACTIVITIES = ["Brisk Walking", "Running / Jogging", "Cycling", "Swimming", "Treadmill / Elliptical", "HIIT Cardio", "Yoga / Mobility"];
@@ -1532,6 +1534,11 @@
           const dataUrl = canvas.toDataURL("image/jpeg", 0.65);
           compressedBase64 = dataUrl.split(",")[1];
           compressedMime = "image/jpeg";
+          const sig = `${file.name || "img"}_${file.size || 0}_${compressedBase64.slice(0, 32)}`;
+          if (sig !== cachedPhotoSignature) {
+            cachedUploadedPhotoUrl = "";
+            cachedPhotoSignature = sig;
+          }
           const preview = document.getElementById("photoPreview");
           preview.src = dataUrl;
           document.getElementById("photoPreviewBox").classList.remove("hidden");
@@ -1545,6 +1552,8 @@
     function clearSelectedPhoto() {
       compressedBase64 = "";
       compressedMime = "";
+      cachedUploadedPhotoUrl = "";
+      cachedPhotoSignature = "";
       document.getElementById("foodCameraInput").value = "";
       document.getElementById("foodGalleryInput").value = "";
       document.getElementById("photoPreview").src = "";
@@ -1567,11 +1576,14 @@
       const meter = document.getElementById("photoStatusMeter");
       btn.disabled = true;
 
-      let uploadedPhotoUrl = "";
+      const currentSig = compressedBase64 ? `${cachedPhotoSignature || "photo"}_${date}_${member}_${meal}` : "";
+      let uploadedPhotoUrl = (currentSig && currentSig === window._lastUploadedMealKey && cachedUploadedPhotoUrl)
+        ? cachedUploadedPhotoUrl
+        : "";
 
       try {
-        // STAGE 1: Upload photo to Google Drive first (if a photo is selected)
-        if (compressedBase64 && compressedMime) {
+        // STAGE 1: Upload photo to Google Drive ONCE (skipped automatically if already uploaded for this meal)
+        if (compressedBase64 && compressedMime && !uploadedPhotoUrl) {
           btn.textContent = "Stage 1/2: Uploading Photo to Drive...";
           if (meter) {
             meter.innerHTML = `<span>⏳ Stage 1/2: Uploading photo to Drive...</span><span class="text-emerald-300">In progress</span>`;
@@ -1587,9 +1599,15 @@
             throw new Error(upRes.message || "Photo upload failed");
           }
           uploadedPhotoUrl = upRes.photoUrl || "";
-          if (meter) {
-            meter.innerHTML = `<span>✓ Stage 1/2 Complete: Photo in Drive</span><span class="text-emerald-300">Analyzing next...</span>`;
+          if (uploadedPhotoUrl) {
+            cachedUploadedPhotoUrl = uploadedPhotoUrl;
+            window._lastUploadedMealKey = currentSig;
           }
+          if (meter) {
+            meter.innerHTML = `<span>✓ Stage 1/2 Saved in Drive (Won't re-upload)</span><span class="text-emerald-300">Running Stage 2...</span>`;
+          }
+        } else if (uploadedPhotoUrl && meter) {
+          meter.innerHTML = `<span>✓ Photo already in Drive — Skipping Upload</span><span class="text-emerald-300">Stage 2 Only</span>`;
         }
 
         // STAGE 2: Analyze macros via Gemini & write row(s) to Google Sheet
@@ -1625,7 +1643,8 @@
           document.getElementById("bgSyncBanner")?.classList.remove("hidden");
           showToast("Still running in background — tap Sync Now shortly");
         } else {
-          alert("Failed to log meal: " + err.message);
+          const retryNote = uploadedPhotoUrl ? "\n\nPhoto is already saved in Drive—tapping Save again will skip upload and run Stage 2 only." : "";
+          alert("Failed to log meal: " + err.message + retryNote);
         }
       } finally {
         btn.disabled = false;
