@@ -1168,7 +1168,7 @@
       }
     }
 
-    async function postToBackend(payload, timeoutMs = 25000) {
+    async function postToBackend(payload, timeoutMs = 60000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -1181,7 +1181,7 @@
         return await res.json();
       } catch (err) {
         if (err.name === "AbortError") {
-          throw new Error("Request timed out after 25s — please try again.");
+          throw new Error("Request timed out after 60s — please try again.");
         }
         throw err;
       } finally {
