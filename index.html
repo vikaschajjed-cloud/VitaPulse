@@ -346,12 +346,23 @@
             <input type="file" id="foodGalleryInput" accept="image/*" class="hidden" onchange="handleImageSelect(event)" />
           </div>
 
-          <div class="mb-5">
-            <div class="flex items-center justify-between mb-1.5">
-              <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Food Items & Quantities (Text-Only Supported)</label>
-              <span class="text-[10px] font-semibold text-emerald-300/85">No photo? Type items & qty</span>
+          <div class="mb-4">
+            <button type="button" onclick="openManualMealModal()"
+              class="w-full py-2.5 px-4 rounded-2xl bg-white/[0.04] hover:bg-emerald-400/10 border border-dashed border-emerald-400/40 text-emerald-200 font-bold text-xs flex items-center justify-between transition">
+              <span class="flex items-center gap-2"><span>✍️</span> No photo? Click here to type in the details</span>
+              <span id="manualItemsCountBadge" class="text-[10px] font-mono-num px-2 py-0.5 rounded-lg bg-emerald-400/15 text-emerald-300 hidden">0 items</span>
+            </button>
+            <div id="manualItemsPreviewChip" class="hidden mt-2 p-3 rounded-2xl bg-emerald-400/10 border border-emerald-400/25 flex items-center justify-between gap-2">
+              <div id="manualItemsPreviewText" class="text-[11px] text-emerald-100 leading-snug"></div>
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <button type="button" onclick="openManualMealModal()" class="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-white/10 text-white">Edit</button>
+                <button type="button" onclick="clearManualMealItems()" class="text-[10px] font-bold px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300">✕</button>
+              </div>
             </div>
-            <input type="text" id="mealDescInput" placeholder="e.g., '2 idli, 1 bowl sambar, 1 vada' or '2.5 mooli paratha + 2 curd'"
+          </div>
+
+          <div class="mb-5">
+            <input type="text" id="mealDescInput" placeholder="Optional extra notes (e.g., 'less oil', 'homemade', 'with ghee')"
               class="studio-input w-full rounded-2xl px-4 py-3 text-xs font-medium" />
           </div>
 
@@ -824,6 +835,38 @@
     </div>
   </div>
 
+  <!-- 1B. No-Photo Manual Meal Builder Pop-Up -->
+  <div id="manualMealModal" onclick="closeModal('manualMealModal')" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="studio-card-mint studio-modal-box rounded-3xl max-w-lg w-full p-6 my-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/85">Text-Only Meal Entry</div>
+          <h3 class="font-serif-editorial font-bold text-white text-2xl">Type Meal Items & Portions</h3>
+        </div>
+        <button onclick="closeModal('manualMealModal')" class="w-8 h-8 rounded-full bg-white/10 text-zinc-300 text-xs">✕</button>
+      </div>
+
+      <div class="grid grid-cols-12 gap-2 text-[9px] font-bold text-zinc-400 uppercase tracking-wider px-1 mb-1.5">
+        <div class="col-span-5">Food / Drink Item</div>
+        <div class="col-span-3 text-center">Qty</div>
+        <div class="col-span-3 text-center">Total g / ml</div>
+        <div class="col-span-1"></div>
+      </div>
+
+      <div id="manualMealRowsContainer" class="space-y-2 mb-3"></div>
+
+      <button type="button" onclick="addManualMealRow()"
+        class="w-full py-2.5 rounded-2xl bg-white/[0.05] hover:bg-emerald-400/15 border border-dashed border-emerald-400/40 text-emerald-200 font-bold text-xs flex items-center justify-center gap-1.5 transition">
+        <span class="text-sm font-black">+</span> Add Another Item Row
+      </button>
+
+      <div class="flex gap-2.5 mt-5">
+        <button type="button" onclick="closeModal('manualMealModal')" class="w-1/3 py-3 rounded-2xl bg-white/5 text-zinc-400 text-xs font-bold">Cancel</button>
+        <button type="button" onclick="saveManualMealRows()" class="btn-vitality w-2/3 py-3 rounded-2xl text-xs uppercase tracking-wider">Save Items</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 2. Edit Meal & Item Quantities Pop-Up -->
   <div id="editMealModal" onclick="closeModal('editMealModal')" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
     <div onclick="event.stopPropagation()" class="studio-card-mint studio-modal-box rounded-3xl max-w-lg w-full p-6 my-6 max-h-[90vh] overflow-y-auto">
@@ -986,6 +1029,7 @@
     let aiQueries = [];
 
     let editingMealItemsState = [];
+    let manualMealItemsState = [];
     let compressedBase64 = "";
     let compressedMime = "";
     let cachedUploadedPhotoUrl = "";
@@ -1561,14 +1605,122 @@
       document.getElementById("uploadPlaceholder").classList.remove("hidden");
     }
 
+    function openManualMealModal() {
+      if (manualMealItemsState.length === 0) {
+        manualMealItemsState = [{ name: "", qty: "1", weightOrVol: "" }];
+      }
+      renderManualMealRows();
+      document.getElementById("manualMealModal").classList.remove("hidden");
+    }
+
+    function addManualMealRow() {
+      manualMealItemsState.push({ name: "", qty: "1", weightOrVol: "" });
+      renderManualMealRows();
+    }
+
+    function removeManualMealRow(idx) {
+      manualMealItemsState.splice(idx, 1);
+      if (manualMealItemsState.length === 0) {
+        manualMealItemsState = [{ name: "", qty: "1", weightOrVol: "" }];
+      }
+      renderManualMealRows();
+    }
+
+    function updateManualMealField(idx, field, val) {
+      if (manualMealItemsState[idx]) {
+        manualMealItemsState[idx][field] = val;
+      }
+    }
+
+    function renderManualMealRows() {
+      const container = document.getElementById("manualMealRowsContainer");
+      container.innerHTML = manualMealItemsState.map((row, idx) => `
+        <div class="grid grid-cols-12 gap-2 items-center">
+          <div class="col-span-5">
+            <input type="text" value="${(row.name || "").replace(/"/g, "&quot;")}"
+              oninput="updateManualMealField(${idx}, 'name', this.value)"
+              placeholder="e.g., Coffee"
+              class="studio-input w-full rounded-xl px-3 py-2 text-xs font-semibold" />
+          </div>
+          <div class="col-span-3">
+            <input type="number" step="0.5" min="0" value="${(row.qty || "").replace(/"/g, "&quot;")}"
+              oninput="updateManualMealField(${idx}, 'qty', this.value)"
+              placeholder="1"
+              class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" />
+          </div>
+          <div class="col-span-3">
+            <input type="text" value="${(row.weightOrVol || "").replace(/"/g, "&quot;")}"
+              oninput="updateManualMealField(${idx}, 'weightOrVol', this.value)"
+              placeholder="150 ml"
+              class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" />
+          </div>
+          <div class="col-span-1 flex justify-center">
+            <button type="button" onclick="removeManualMealRow(${idx})"
+              class="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-bold">✕</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function formatManualItemsText(items) {
+      return items.map(it => {
+        const qtyPart = it.qty ? `${it.qty}x ` : "";
+        const volPart = it.weightOrVol ? ` (${it.weightOrVol})` : "";
+        return `${qtyPart}${it.name}${volPart}`;
+      }).join(", ");
+    }
+
+    function saveManualMealRows() {
+      const valid = manualMealItemsState
+        .map(r => ({
+          name: String(r.name || "").trim(),
+          qty: String(r.qty || "").trim(),
+          weightOrVol: String(r.weightOrVol || "").trim()
+        }))
+        .filter(r => r.name.length > 0);
+
+      if (valid.length === 0) {
+        return alert("Please enter at least one food or drink item.");
+      }
+      manualMealItemsState = valid;
+      updateManualMealPreviewUI();
+      closeModal("manualMealModal");
+      showToast(`${valid.length} item(s) added to meal!`);
+    }
+
+    function clearManualMealItems() {
+      manualMealItemsState = [];
+      updateManualMealPreviewUI();
+    }
+
+    function updateManualMealPreviewUI() {
+      const badge = document.getElementById("manualItemsCountBadge");
+      const chip = document.getElementById("manualItemsPreviewChip");
+      const textEl = document.getElementById("manualItemsPreviewText");
+      if (!badge || !chip || !textEl) return;
+
+      if (manualMealItemsState.length === 0) {
+        badge.classList.add("hidden");
+        chip.classList.add("hidden");
+        textEl.textContent = "";
+      } else {
+        badge.textContent = `${manualMealItemsState.length} item${manualMealItemsState.length > 1 ? "s" : ""}`;
+        badge.classList.remove("hidden");
+        textEl.textContent = formatManualItemsText(manualMealItemsState);
+        chip.classList.remove("hidden");
+      }
+    }
+
     async function submitMeal() {
       const member = document.getElementById("mealMemberSelect").value;
       const meal = document.getElementById("mealTypeSelect").value;
       const date = document.getElementById("mealDateInput").value;
-      const description = document.getElementById("mealDescInput").value.trim();
+      const extraNotes = document.getElementById("mealDescInput").value.trim();
+      const manualText = manualMealItemsState.length > 0 ? formatManualItemsText(manualMealItemsState) : "";
+      const description = [manualText, extraNotes].filter(Boolean).join(" | ");
 
       if (!compressedBase64 && !description) {
-        return alert("Please upload a food photo or type the food items and quantities.");
+        return alert("Please upload a food photo or click 'No photo? Click here to type in the details'.");
       }
 
       const duplicateFor = Array.from(document.querySelectorAll('input[name="dupMemberCheck"]:checked')).map(cb => cb.value);
@@ -1619,8 +1771,8 @@
           action: "analyzeMealRecord",
           member, meal, date, description, duplicateFor,
           photoUrl: uploadedPhotoUrl,
-          imageBase64: uploadedPhotoUrl ? "" : compressedBase64,
-          mimeType: uploadedPhotoUrl ? "" : compressedMime
+          imageBase64: compressedBase64,
+          mimeType: compressedMime
         }, 120000);
 
         if (res.status === "error") return alert(res.message);
@@ -1632,6 +1784,7 @@
         }
         document.getElementById("bgSyncBanner")?.classList.add("hidden");
         clearSelectedPhoto();
+        clearManualMealItems();
         document.getElementById("mealDescInput").value = "";
         document.querySelectorAll('input[name="dupMemberCheck"]').forEach(cb => cb.checked = false);
         document.getElementById("trackerFilterDate").value = date;
