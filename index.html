@@ -145,6 +145,66 @@
     .long-press-target { transition: transform 0.15s ease, border-color 0.2s ease; }
     .long-press-target:active { transform: scale(0.985); }
 
+    /* Translucent Syncing Pop-Up (Initial Load) */
+    #translucentSyncModal {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      background: rgba(10, 12, 16, 0.65);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    #translucentSyncModal.hidden {
+      display: none !important;
+    }
+    .sync-spinner-ring {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255, 255, 255, 0.12);
+      border-top-color: #34d399;
+      border-radius: 9999px;
+      animation: spinSync 0.85s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spinSync { to { transform: rotate(360deg); } }
+
+    /* Floating Background Cache Sync Pill */
+    #floatingSyncPill {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 55;
+      background: rgba(18, 21, 28, 0.94);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(52, 211, 153, 0.4);
+      color: #a7f3d0;
+      padding: 8px 16px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+      white-space: nowrap;
+    }
+    .floating-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 9999px;
+      background: #34d399;
+      animation: pulseDot 1.1s infinite ease-in-out;
+    }
+    @keyframes pulseDot {
+      0%, 100% { transform: scale(0.85); opacity: 0.5; }
+      50% { transform: scale(1.25); opacity: 1; }
+    }
+
     /* Stacked Photo Thumbnail Deck */
     .photo-deck {
       position: relative;
@@ -186,21 +246,55 @@
 </head>
 <body class="pb-16 selection:bg-emerald-400/25 selection:text-emerald-100">
 
-  <!-- ==================== PIN ACCESS POP-UP ==================== -->
+  <!-- ==================== PIN & NAME ACCESS POP-UP ==================== -->
   <div id="pinModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
     <div class="studio-card-mint studio-modal-box rounded-3xl max-w-sm w-full p-7 text-center">
       <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-300 via-teal-400 to-cyan-500 text-zinc-950 flex items-center justify-center mx-auto mb-4 text-2xl font-black shadow-lg">⚡</div>
       <div class="text-[10px] font-bold uppercase tracking-[0.28em] text-emerald-300/85">Family Wellness & Growth</div>
       <h2 class="font-serif-editorial text-3xl font-bold text-white mt-1 tracking-tight">VitaPulse</h2>
-      <p class="text-xs text-zinc-400 mt-1 mb-6">Direct Google Sheets Dashboard</p>
-      <input id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="• • • •"
-        class="studio-input w-full text-center text-xl tracking-[0.45em] font-mono-num font-bold rounded-2xl py-3.5 mb-4" />
-      <details class="text-left mb-5">
+      <p class="text-xs text-zinc-400 mt-1 mb-5">Enter your name &amp; family PIN</p>
+
+      <div class="grid grid-cols-2 gap-2.5 mb-3 text-left">
+        <div>
+          <label class="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-1">First Name</label>
+          <input id="firstNameInput" type="text" placeholder="e.g., Vikas" autocomplete="given-name"
+            class="studio-input w-full rounded-xl px-3 py-2.5 text-xs font-bold" />
+        </div>
+        <div>
+          <label class="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Last Name</label>
+          <input id="lastNameInput" type="text" placeholder="e.g., Navratan" autocomplete="family-name"
+            class="studio-input w-full rounded-xl px-3 py-2.5 text-xs font-bold" />
+        </div>
+      </div>
+
+      <div class="text-left mb-4">
+        <label class="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Family PIN / Password</label>
+        <input id="pinInput" type="password" inputmode="numeric" maxlength="16" placeholder="• • • •"
+          onkeydown="if(event.key==='Enter')unlockApp()"
+          class="studio-input w-full text-center text-lg tracking-[0.35em] font-mono-num font-bold rounded-2xl py-3" />
+      </div>
+
+      <details class="text-left mb-4">
         <summary class="text-[11px] text-zinc-500 cursor-pointer hover:text-emerald-300 font-medium">Configure Apps Script Endpoint</summary>
         <input id="apiUrlInput" type="text" class="studio-input w-full text-[11px] rounded-xl p-2.5 mt-2 text-zinc-300" />
       </details>
       <button onclick="unlockApp()" class="btn-vitality w-full py-3.5 rounded-2xl text-xs uppercase tracking-widest">Open Tracker →</button>
     </div>
+  </div>
+
+  <!-- Translucent Syncing Pop-Up (when no cache yet) -->
+  <div id="translucentSyncModal" class="hidden">
+    <div class="studio-card-mint studio-modal-box rounded-3xl px-8 py-7 text-center max-w-xs w-full">
+      <div class="sync-spinner-ring"></div>
+      <div class="text-sm font-bold text-white">Syncing Family Data…</div>
+      <div class="text-[11px] text-zinc-400 mt-1">Fetching latest entries from Google Sheets</div>
+    </div>
+  </div>
+
+  <!-- Floating Background Cache Status Pill -->
+  <div id="floatingSyncPill">
+    <span class="floating-dot"></span>
+    <span id="floatingSyncText">Showing cached data • Syncing in background…</span>
   </div>
 
   <!-- ==================== SLIDE-OUT HAMBURGER DRAWER ==================== -->
@@ -257,8 +351,11 @@
       <button onclick="syncAllData(); closeDrawer();" class="w-full py-3 px-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-emerald-300 flex items-center justify-center gap-2">
         <span>↻</span> Sync Google Sheet
       </button>
+      <button onclick="openUserSwitchModal(); closeDrawer();" class="w-full py-2 px-4 rounded-xl text-[11px] font-medium text-zinc-400 hover:text-emerald-300">
+        👤 Switch Name / PIN
+      </button>
       <button onclick="openSettings(); closeDrawer();" class="w-full py-2 px-4 rounded-xl text-[11px] font-medium text-zinc-500 hover:text-zinc-300">
-        ⚙️ PIN & Endpoint Settings
+        ⚙️ Endpoint Settings
       </button>
     </div>
   </aside>
@@ -1137,44 +1234,45 @@
     ];
     const BODY_PARTS = ["Full Body", "Chest", "Back", "Shoulders", "Arms (Biceps/Triceps)", "Legs & Glutes", "Core & Abs"];
 
-    function createPencilPattern(strokeColor, bgAlpha = 0.08, angleDeg = -45, spacing = 7, lineWidth = 1.8) {
-      const pCanvas = document.createElement("canvas");
-      const size = spacing * 4;
-      pCanvas.width = size;
-      pCanvas.height = size;
-      const pCtx = pCanvas.getContext("2d");
+    const _patternCache = {};
+    function createPencilPattern(strokeColor, bgAlpha = 0.14, angleDeg = -45, spacing = 6, lineWidth = 1.8) {
+      const key = `${strokeColor}_${bgAlpha}_${angleDeg}_${spacing}_${lineWidth}`;
+      if (_patternCache[key]) return _patternCache[key];
+      try {
+        const pCanvas = document.createElement("canvas");
+        const size = spacing * 4;
+        pCanvas.width = size;
+        pCanvas.height = size;
+        const pCtx = pCanvas.getContext("2d");
+        if (!pCtx) return hexToRgba(strokeColor, 0.35);
 
-      pCtx.fillStyle = hexToRgba(strokeColor, bgAlpha);
-      pCtx.fillRect(0, 0, size, size);
+        pCtx.fillStyle = hexToRgba(strokeColor, bgAlpha);
+        pCtx.fillRect(0, 0, size, size);
 
-      pCtx.save();
-      pCtx.translate(size / 2, size / 2);
-      pCtx.rotate((angleDeg * Math.PI) / 180);
-      pCtx.translate(-size / 2, -size / 2);
+        pCtx.save();
+        pCtx.translate(size / 2, size / 2);
+        pCtx.rotate((angleDeg * Math.PI) / 180);
+        pCtx.translate(-size / 2, -size / 2);
 
-      pCtx.strokeStyle = strokeColor;
-      pCtx.lineWidth = lineWidth;
-      pCtx.lineCap = "round";
+        pCtx.strokeStyle = strokeColor;
+        pCtx.lineWidth = lineWidth;
+        pCtx.lineCap = "round";
 
-      for (let x = -size * 2; x < size * 3; x += spacing) {
-        pCtx.beginPath();
-        pCtx.moveTo(x, -size * 2);
-        pCtx.lineTo(x, size * 3);
-        pCtx.stroke();
-      }
-      pCtx.restore();
+        for (let x = -size * 2; x < size * 3; x += spacing) {
+          pCtx.beginPath();
+          pCtx.moveTo(x, -size * 2);
+          pCtx.lineTo(x, size * 3);
+          pCtx.stroke();
+        }
+        pCtx.restore();
 
-      const tempCtx = document.createElement("canvas").getContext("2d");
-      return tempCtx.createPattern(pCanvas, "repeat");
-    }
-
-    function hexToRgba(hex, alpha) {
-      const clean = hex.replace("#", "");
-      const num = parseInt(clean, 16);
-      const r = (num >> 16) & 255;
-      const g = (num >> 8) & 255;
-      const b = num & 255;
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        const pat = pCtx.createPattern(pCanvas, "repeat");
+        if (pat) {
+          _patternCache[key] = pat;
+          return pat;
+        }
+      } catch (e) {}
+      return hexToRgba(strokeColor, 0.35);
     }
 
     Chart.defaults.color = "#a1a1aa";
@@ -2846,7 +2944,51 @@
       }
     }
 
+    function filterByAnalyticsPeriod(records) {
+      const pTypeEl = document.getElementById("filterPeriodType");
+      const yearEl = document.getElementById("filterYear");
+      const monthEl = document.getElementById("filterMonth");
+      const exactDateEl = document.getElementById("filterExactDate");
+
+      const pType = pTypeEl ? pTypeEl.value : "month";
+      const year = yearEl ? yearEl.value : "2026";
+      const month = monthEl ? monthEl.value : "11";
+      const exactDate = exactDateEl ? exactDateEl.value : getLocalDateStr(0);
+
+      const memberFiltered = (records || []).filter(r => {
+        if (selectedMember === "All") return true;
+        return String(r.member || "").trim().toLowerCase() === String(selectedMember || "").trim().toLowerCase();
+      });
+
+      const rangeEl = document.getElementById("analyticsRangeLabel");
+
+      if (pType === "day") {
+        const normExact = normalizeDateStr(exactDate);
+        if (rangeEl) rangeEl.textContent = normExact || exactDate;
+        return memberFiltered.filter(r => normalizeDateStr(r.date) === normExact);
+      }
+      if (pType === "week") {
+        const startStr = getLocalDateStr(-7);
+        if (rangeEl) rangeEl.textContent = "Last 7 Days";
+        return memberFiltered.filter(r => normalizeDateStr(r.date) >= startStr);
+      }
+      if (pType === "year") {
+        if (rangeEl) rangeEl.textContent = `Year ${year}`;
+        return memberFiltered.filter(r => normalizeDateStr(r.date).startsWith(String(year)));
+      }
+      const ym = `${year}-${String(month).padStart(2, "0")}`;
+      const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const mIdx = Math.max(0, Math.min(11, Number(month) - 1));
+      if (rangeEl) rangeEl.textContent = `${monthNames[mIdx]} ${year}`;
+      return memberFiltered.filter(r => normalizeDateStr(r.date).startsWith(ym));
+    }
+
     function renderAnalytics() {
+      if (typeof Chart === "undefined") {
+        showToast("Chart library loading — please retry");
+        return;
+      }
+
       const fMeals = filterByAnalyticsPeriod(mealLogs);
       const fFit = filterByAnalyticsPeriod(fitnessLogs);
 
@@ -2854,304 +2996,597 @@
         let totalCal = 0, totalPro = 0, totalCarb = 0, totalFat = 0, totalFib = 0;
         const uniqueDays = new Set();
         fMeals.forEach(m => {
-          totalCal += m.calories;
-          totalPro += m.protein;
-          totalCarb += m.carbs;
-          totalFat += m.fats;
-          totalFib += m.fiber;
-          uniqueDays.add(m.date);
+          totalCal += Number(m.calories) || 0;
+          totalPro += Number(m.protein) || 0;
+          totalCarb += Number(m.carbs) || 0;
+          totalFat += Number(m.fats) || 0;
+          totalFib += Number(m.fiber) || 0;
+          const dk = normalizeDateStr(m.date);
+          if (dk) uniqueDays.add(dk);
         });
-        const totalBurn = fFit.reduce((s, x) => s + x.caloriesBurned, 0);
+        const totalBurn = fFit.reduce((s, x) => s + (Number(x.caloriesBurned) || 0), 0);
         const dayCount = Math.max(1, uniqueDays.size);
 
-        document.getElementById("anTotalCal").textContent = `${Math.round(totalCal).toLocaleString()} kcal`;
-        document.getElementById("anAvgCal").textContent = `Avg: ${Math.round(totalCal / dayCount).toLocaleString()} / day`;
-        document.getElementById("anTotalPro").textContent = `${totalPro.toFixed(1)} g`;
-        document.getElementById("anAvgPro").textContent = `Avg: ${(totalPro / dayCount).toFixed(1)}g / day`;
-        document.getElementById("anCarbFat").textContent = `${Math.round(totalCarb)}g C • ${Math.round(totalFat)}g F`;
-        document.getElementById("anTotalFib").textContent = `Fiber: ${totalFib.toFixed(1)}g`;
-        document.getElementById("anNetCal").textContent = `${Math.round(totalCal - totalBurn).toLocaleString()} kcal`;
+        const elTotCal = document.getElementById("anTotalCal");
+        const elAvgCal = document.getElementById("anAvgCal");
+        const elTotPro = document.getElementById("anTotalPro");
+        const elAvgPro = document.getElementById("anAvgPro");
+        const elCarbFat = document.getElementById("anCarbFat");
+        const elTotFib = document.getElementById("anTotalFib");
+        const elNetCal = document.getElementById("anNetCal");
 
-        const activeProf = profiles.find(p => p.name === selectedMember);
-        const targetCal = activeProf ? activeProf.calTarget : profiles.reduce((s, p) => s + p.calTarget, 0);
+        if (elTotCal) elTotCal.textContent = `${Math.round(totalCal).toLocaleString()} kcal`;
+        if (elAvgCal) elAvgCal.textContent = `Avg: ${Math.round(totalCal / dayCount).toLocaleString()} / day`;
+        if (elTotPro) elTotPro.textContent = `${totalPro.toFixed(1)} g`;
+        if (elAvgPro) elAvgPro.textContent = `Avg: ${(totalPro / dayCount).toFixed(1)}g / day`;
+        if (elCarbFat) elCarbFat.textContent = `${Math.round(totalCarb)}g C • ${Math.round(totalFat)}g F`;
+        if (elTotFib) elTotFib.textContent = `Fiber: ${totalFib.toFixed(1)}g`;
+        if (elNetCal) elNetCal.textContent = `${Math.round(totalCal - totalBurn).toLocaleString()} kcal`;
+
+        const activeProf = profiles.find(p => String(p.name || "").trim().toLowerCase() === String(selectedMember || "").trim().toLowerCase());
+        const targetCal = activeProf
+          ? (Number(activeProf.calTarget) || 1750)
+          : profiles.reduce((s, p) => s + (Number(p.calTarget) || 0), 0);
 
         const byDate = {};
-        [...fMeals].reverse().forEach(m => {
-          byDate[m.date] = (byDate[m.date] || 0) + m.calories;
+        fMeals.forEach(m => {
+          const dKey = normalizeDateStr(m.date);
+          if (!dKey) return;
+          byDate[dKey] = (byDate[dKey] || 0) + (Number(m.calories) || 0);
         });
-        const dates = Object.keys(byDate);
-        const cals = Object.values(byDate);
+        const dates = Object.keys(byDate).sort();
+        const cals = dates.map(d => Math.round(byDate[d]));
 
-        const mintHatch = createPencilPattern("#34d399", 0.14, -45, 6, 1.8);
-        const cyanHatch = createPencilPattern("#38bdf8", 0.14, 45, 6, 1.8);
-        const amberHatch = createPencilPattern("#fbbf24", 0.14, -45, 6, 1.8);
-        const coralHatch = createPencilPattern("#fb7185", 0.14, 45, 6, 1.8);
+        const mintHatch = createPencilPattern("#34d399", 0.16, -45, 6, 1.8);
+        const cyanHatch = createPencilPattern("#38bdf8", 0.16, 45, 6, 1.8);
+        const amberHatch = createPencilPattern("#fbbf24", 0.16, -45, 6, 1.8);
+        const coralHatch = createPencilPattern("#fb7185", 0.16, 45, 6, 1.8);
 
+        const commonOpts = {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 250 }
+        };
+
+        // 1. Daily Calorie Intake vs. Target
         destroyChart("calTrend");
-        charts.calTrend = new Chart(document.getElementById("chartCalorieTrend"), {
-          type: "bar",
-          data: {
-            labels: dates.map(d => d.slice(5)),
-            datasets: [
-              {
-                label: "Calories (kcal)",
-                data: cals,
-                backgroundColor: mintHatch,
-                borderColor: "#34d399",
-                borderWidth: 1.8,
-                borderRadius: 10
-              },
-              {
-                label: "Daily Target",
-                data: dates.map(() => targetCal),
-                type: "line",
-                borderColor: "#38bdf8",
-                borderDash: [6, 5],
-                borderWidth: 2,
-                pointRadius: 3,
-                pointBackgroundColor: "#38bdf8"
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-          }
-        });
-
-        destroyChart("macroDoughnut");
-        charts.macroDoughnut = new Chart(document.getElementById("chartMacroDoughnut"), {
-          type: "doughnut",
-          data: {
-            labels: ["Protein (4 kcal/g)", "Carbs (4 kcal/g)", "Fats (9 kcal/g)"],
-            datasets: [{
-              data: [Math.round(totalPro * 4), Math.round(totalCarb * 4), Math.round(totalFat * 9)],
-              backgroundColor: [cyanHatch, amberHatch, coralHatch],
-              borderColor: ["#38bdf8", "#fbbf24", "#fb7185"],
-              borderWidth: 2
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: "66%",
-            plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
-          }
-        });
-
-        const slots = ["Breakfast", "Pre-lunch Snack", "Lunch", "Evening Snack", "Dinner"];
-        const slotTotals = slots.map(s => fMeals.filter(m => m.meal === s).reduce((acc, x) => acc + x.calories, 0));
-        destroyChart("mealSlots");
-        charts.mealSlots = new Chart(document.getElementById("chartMealSlots"), {
-          type: "bar",
-          data: {
-            labels: ["B'fast", "Pre-L", "Lunch", "Snack", "Dinner"],
-            datasets: [{
-              label: "kcal",
-              data: slotTotals,
-              backgroundColor: cyanHatch,
-              borderColor: "#38bdf8",
-              borderWidth: 1.8,
-              borderRadius: 10
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-        });
-
-        const anDefTitle = document.querySelector("#chartDailyDeficit")?.closest("section")?.querySelector("h3");
-        const anDefSub = document.querySelector("#chartDailyDeficit")?.closest("section")?.querySelector("p");
-        const anDefBadge = document.querySelector("#chartDailyDeficit")?.closest("section")?.querySelector("span");
-
-        if (activeProf && !isFatLossGoal(activeProf)) {
-          // Strength / Muscle / Growth Member -> Show Daily Protein Intake vs Protein Target
-          if (anDefTitle) anDefTitle.textContent = "Daily Protein Intake vs. Protein Target";
-          if (anDefSub) anDefSub.textContent = "Protein grams logged each day against muscle & growth target";
-          if (anDefBadge) anDefBadge.textContent = "Protein Focus";
-
-          const proByDate = {};
-          [...fMeals].reverse().forEach(m => {
-            proByDate[m.date] = Number(((proByDate[m.date] || 0) + (Number(m.protein) || 0)).toFixed(1));
-          });
-          const proDates = Object.keys(proByDate);
-          const proVals = Object.values(proByDate);
-          const proGoal = Number(activeProf.proteinTarget) || 45;
-
-          destroyChart("dailyDeficit");
-          charts.dailyDeficit = new Chart(document.getElementById("chartDailyDeficit"), {
+        const calCtx = document.getElementById("chartCalorieTrend");
+        if (calCtx) {
+          const xLabels = dates.length ? dates.map(d => d.slice(5)) : ["No Data"];
+          const barData = dates.length ? cals : [0];
+          const lineData = xLabels.map(() => targetCal);
+          charts.calTrend = new Chart(calCtx, {
             type: "bar",
             data: {
-              labels: proDates.map(d => d.slice(5)),
+              labels: xLabels,
               datasets: [
                 {
-                  label: "Protein Intake (g)",
-                  data: proVals,
-                  backgroundColor: cyanHatch,
-                  borderColor: "#38bdf8",
-                  borderWidth: 1.8,
-                  borderRadius: 10
-                },
-                {
-                  label: "Protein Target (g)",
-                  data: proDates.map(() => proGoal),
-                  type: "line",
-                  borderColor: "#34d399",
-                  borderDash: [6, 5],
-                  borderWidth: 2,
-                  pointRadius: 3,
-                  pointBackgroundColor: "#34d399"
-                }
-              ]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-            }
-          });
-        } else {
-          // Fat Loss / Lean Members -> Show Daily Calorie Deficit (1.0x Base + Exercise)
-          if (anDefTitle) anDefTitle.textContent = "Daily Calorie Deficit vs. Deficit Goal (1.0x Base)";
-          if (anDefSub) anDefSub.textContent = "(1.0x BMR + Workout Burn) minus Food Intake each day";
-          if (anDefBadge) anDefBadge.textContent = "Deficit Watch";
-
-          const flProfs = selectedMember === "All"
-            ? profiles.filter(p => isFatLossGoal(p))
-            : (activeProf ? [activeProf] : []);
-          const baseList = flProfs.map(p => computeBaselineBurn(p));
-          const baseTdeeSum = baseList.reduce((s, b) => s + b.tdee, 0);
-          const deficitGoalSum = baseList.reduce((s, b) => s + b.deficitTarget, 0);
-
-          const flIntakeByDate = {};
-          [...fMeals].reverse().forEach(m => {
-            if (selectedMember !== "All" || flProfs.some(fp => fp.name === m.member)) {
-              flIntakeByDate[m.date] = (flIntakeByDate[m.date] || 0) + (Number(m.calories) || 0);
-            }
-          });
-          const fitByDate = {};
-          [...fFit].reverse().forEach(f => {
-            if (selectedMember !== "All" || flProfs.some(fp => fp.name === f.member)) {
-              fitByDate[f.date] = (fitByDate[f.date] || 0) + (Number(f.caloriesBurned) || 0);
-            }
-          });
-          const allDefDates = Array.from(new Set([...Object.keys(flIntakeByDate), ...Object.keys(fitByDate)])).sort();
-          const deficitSeries = allDefDates.map(d => {
-            const intakeVal = flIntakeByDate[d] || 0;
-            const exVal = fitByDate[d] || 0;
-            return Math.round((baseTdeeSum + exVal) - intakeVal);
-          });
-          destroyChart("dailyDeficit");
-          charts.dailyDeficit = new Chart(document.getElementById("chartDailyDeficit"), {
-            type: "bar",
-            data: {
-              labels: allDefDates.map(d => d.slice(5)),
-              datasets: [
-                {
-                  label: "Daily Deficit (kcal)",
-                  data: deficitSeries,
+                  label: "Calories (kcal)",
+                  data: barData,
                   backgroundColor: mintHatch,
                   borderColor: "#34d399",
                   borderWidth: 1.8,
-                  borderRadius: 10
+                  borderRadius: 8,
+                  order: 2
                 },
                 {
-                  label: "Deficit Target",
-                  data: allDefDates.map(() => deficitGoalSum),
+                  label: "Daily Target",
+                  data: lineData,
                   type: "line",
-                  borderColor: "#fbbf24",
+                  borderColor: "#38bdf8",
                   borderDash: [6, 5],
                   borderWidth: 2,
                   pointRadius: 3,
-                  pointBackgroundColor: "#fbbf24"
+                  pointBackgroundColor: "#38bdf8",
+                  fill: false,
+                  order: 1
                 }
               ]
             },
             options: {
-              responsive: true,
-              maintainAspectRatio: false,
+              ...commonOpts,
+              scales: {
+                y: { beginAtZero: true }
+              },
               plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
             }
           });
         }
 
+        // 2. Macro Calorie Split
+        destroyChart("macroDoughnut");
+        const macCtx = document.getElementById("chartMacroDoughnut");
+        if (macCtx) {
+          const pKcal = Math.round(totalPro * 4);
+          const cKcal = Math.round(totalCarb * 4);
+          const fKcal = Math.round(totalFat * 9);
+          const hasMac = (pKcal + cKcal + fKcal) > 0;
+          charts.macroDoughnut = new Chart(macCtx, {
+            type: "doughnut",
+            data: {
+              labels: ["Protein (4 kcal/g)", "Carbs (4 kcal/g)", "Fats (9 kcal/g)"],
+              datasets: [{
+                data: hasMac ? [pKcal, cKcal, fKcal] : [1, 1, 1],
+                backgroundColor: [cyanHatch, amberHatch, coralHatch],
+                borderColor: ["#38bdf8", "#fbbf24", "#fb7185"],
+                borderWidth: 2
+              }]
+            },
+            options: {
+              ...commonOpts,
+              cutout: "66%",
+              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+          });
+        }
+
+        // 3. Calories by Meal Slot
+        const slotBuckets = [
+          { label: "B'fast", matches: ["breakfast"] },
+          { label: "Pre-L", matches: ["pre-lunch snack", "pre-lunch", "snack", "morning snack"] },
+          { label: "Lunch", matches: ["lunch"] },
+          { label: "Snack", matches: ["evening snack", "afternoon snack", "snacks"] },
+          { label: "Dinner", matches: ["dinner", "late night snack", "night snack"] }
+        ];
+        const slotTotals = slotBuckets.map(sb =>
+          fMeals.filter(m => sb.matches.includes(String(m.meal || "").trim().toLowerCase()))
+            .reduce((acc, x) => acc + (Number(x.calories) || 0), 0)
+        );
+        destroyChart("mealSlots");
+        const slotCtx = document.getElementById("chartMealSlots");
+        if (slotCtx) {
+          charts.mealSlots = new Chart(slotCtx, {
+            type: "bar",
+            data: {
+              labels: slotBuckets.map(sb => sb.label),
+              datasets: [{
+                label: "kcal",
+                data: slotTotals,
+                backgroundColor: cyanHatch,
+                borderColor: "#38bdf8",
+                borderWidth: 1.8,
+                borderRadius: 8
+              }]
+            },
+            options: {
+              ...commonOpts,
+              scales: { y: { beginAtZero: true } },
+              plugins: { legend: { display: false } }
+            }
+          });
+        }
+
+        // 4. Daily Deficit OR Protein Target Chart
+        const defCanvas = document.getElementById("chartDailyDeficit");
+        const defSection = defCanvas ? defCanvas.closest("section") : null;
+        const anDefTitle = defSection ? defSection.querySelector("h3") : null;
+        const anDefSub = defSection ? defSection.querySelector("p") : null;
+        const anDefBadge = defSection ? defSection.querySelector("span") : null;
+
+        destroyChart("dailyDeficit");
+        if (defCanvas) {
+          if (activeProf && !isFatLossGoal(activeProf)) {
+            if (anDefTitle) anDefTitle.textContent = "Daily Protein Intake vs. Protein Target";
+            if (anDefSub) anDefSub.textContent = "Protein grams logged each day against muscle & growth target";
+            if (anDefBadge) anDefBadge.textContent = "Protein Focus";
+
+            const proByDate = {};
+            fMeals.forEach(m => {
+              const dKey = normalizeDateStr(m.date);
+              if (!dKey) return;
+              proByDate[dKey] = Number(((proByDate[dKey] || 0) + (Number(m.protein) || 0)).toFixed(1));
+            });
+            const proDates = Object.keys(proByDate).sort();
+            const proVals = proDates.map(d => proByDate[d]);
+            const proGoal = Number(activeProf.proteinTarget) || 45;
+            const pLabels = proDates.length ? proDates.map(d => d.slice(5)) : ["No Data"];
+
+            charts.dailyDeficit = new Chart(defCanvas, {
+              type: "bar",
+              data: {
+                labels: pLabels,
+                datasets: [
+                  {
+                    label: "Protein Intake (g)",
+                    data: proDates.length ? proVals : [0],
+                    backgroundColor: cyanHatch,
+                    borderColor: "#38bdf8",
+                    borderWidth: 1.8,
+                    borderRadius: 8,
+                    order: 2
+                  },
+                  {
+                    label: "Protein Target (g)",
+                    data: pLabels.map(() => proGoal),
+                    type: "line",
+                    borderColor: "#34d399",
+                    borderDash: [6, 5],
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: "#34d399",
+                    fill: false,
+                    order: 1
+                  }
+                ]
+              },
+              options: {
+                ...commonOpts,
+                scales: { y: { beginAtZero: true } },
+                plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
+              }
+            });
+          } else {
+            if (anDefTitle) anDefTitle.textContent = "Daily Calorie Deficit vs. Deficit Goal (1.0x Base)";
+            if (anDefSub) anDefSub.textContent = "(1.0x BMR + Workout Burn) minus Food Intake each day";
+            if (anDefBadge) anDefBadge.textContent = "Deficit Watch";
+
+            const flProfs = selectedMember === "All"
+              ? profiles.filter(p => isFatLossGoal(p))
+              : (activeProf ? [activeProf] : []);
+            const baseList = flProfs.map(p => computeBaselineBurn(p));
+            const baseTdeeSum = baseList.reduce((s, b) => s + b.tdee, 0);
+            const deficitGoalSum = baseList.reduce((s, b) => s + b.deficitTarget, 0);
+
+            const flIntakeByDate = {};
+            fMeals.forEach(m => {
+              const dKey = normalizeDateStr(m.date);
+              if (!dKey) return;
+              const matchMem = selectedMember !== "All" || flProfs.some(fp => String(fp.name).toLowerCase() === String(m.member || "").toLowerCase());
+              if (matchMem) {
+                flIntakeByDate[dKey] = (flIntakeByDate[dKey] || 0) + (Number(m.calories) || 0);
+              }
+            });
+            const fitByDate = {};
+            fFit.forEach(f => {
+              const dKey = normalizeDateStr(f.date);
+              if (!dKey) return;
+              const matchMem = selectedMember !== "All" || flProfs.some(fp => String(fp.name).toLowerCase() === String(f.member || "").toLowerCase());
+              if (matchMem) {
+                fitByDate[dKey] = (fitByDate[dKey] || 0) + (Number(f.caloriesBurned) || 0);
+              }
+            });
+            const allDefDates = Array.from(new Set([...Object.keys(flIntakeByDate), ...Object.keys(fitByDate)])).sort();
+            const deficitSeries = allDefDates.map(d => {
+              const intakeVal = flIntakeByDate[d] || 0;
+              const exVal = fitByDate[d] || 0;
+              return Math.round((baseTdeeSum + exVal) - intakeVal);
+            });
+            const dLabels = allDefDates.length ? allDefDates.map(d => d.slice(5)) : ["No Data"];
+
+            charts.dailyDeficit = new Chart(defCanvas, {
+              type: "bar",
+              data: {
+                labels: dLabels,
+                datasets: [
+                  {
+                    label: "Daily Deficit (kcal)",
+                    data: allDefDates.length ? deficitSeries : [0],
+                    backgroundColor: mintHatch,
+                    borderColor: "#34d399",
+                    borderWidth: 1.8,
+                    borderRadius: 8,
+                    order: 2
+                  },
+                  {
+                    label: "Deficit Target",
+                    data: dLabels.map(() => deficitGoalSum),
+                    type: "line",
+                    borderColor: "#fbbf24",
+                    borderDash: [6, 5],
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: "#fbbf24",
+                    fill: false,
+                    order: 1
+                  }
+                ]
+              },
+              options: {
+                ...commonOpts,
+                plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
+              }
+            });
+          }
+        }
+
       } else {
-        const totalMin = fFit.reduce((s, x) => s + x.durationMin, 0);
-        const totalSteps = fFit.reduce((s, x) => s + (x.category === "Cardio" ? x.stepsOrVolume : 0), 0);
-        const totalBurn = fFit.reduce((s, x) => s + x.caloriesBurned, 0);
+        const totalMin = fFit.reduce((s, x) => s + (Number(x.durationMin) || 0), 0);
+        const totalSteps = fFit.reduce((s, x) => s + (x.category === "Cardio" ? (Number(x.stepsOrVolume) || 0) : 0), 0);
+        const totalBurn = fFit.reduce((s, x) => s + (Number(x.caloriesBurned) || 0), 0);
 
         document.getElementById("fitTotalMin").textContent = `${totalMin} min`;
         document.getElementById("fitTotalSteps").textContent = totalSteps.toLocaleString();
         document.getElementById("fitTotalBurn").textContent = `${totalBurn.toLocaleString()} kcal`;
 
-        const cyanHatch = createPencilPattern("#38bdf8", 0.14, -45, 6, 1.8);
-        const mintHatch = createPencilPattern("#34d399", 0.14, 45, 6, 1.8);
-        const violetHatch = createPencilPattern("#a78bfa", 0.15, -45, 6, 1.8);
+        const cyanHatch = createPencilPattern("#38bdf8", 0.16, -45, 6, 1.8);
+        const mintHatch = createPencilPattern("#34d399", 0.16, 45, 6, 1.8);
+        const violetHatch = createPencilPattern("#a78bfa", 0.16, -45, 6, 1.8);
 
         const byDate = {};
-        [...fFit].reverse().forEach(f => {
-          if (!byDate[f.date]) byDate[f.date] = { min: 0, burn: 0 };
-          byDate[f.date].min += f.durationMin;
-          byDate[f.date].burn += f.caloriesBurned;
+        fFit.forEach(f => {
+          const dKey = normalizeDateStr(f.date);
+          if (!dKey) return;
+          if (!byDate[dKey]) byDate[dKey] = { min: 0, burn: 0 };
+          byDate[dKey].min += Number(f.durationMin) || 0;
+          byDate[dKey].burn += Number(f.caloriesBurned) || 0;
         });
 
+        const fitDates = Object.keys(byDate).sort();
         destroyChart("fitTrend");
-        charts.fitTrend = new Chart(document.getElementById("chartFitnessTrend"), {
-          type: "bar",
-          data: {
-            labels: Object.keys(byDate).map(d => d.slice(5)),
-            datasets: [
-              { label: "Duration (min)", data: Object.values(byDate).map(v => v.min), backgroundColor: cyanHatch, borderColor: "#38bdf8", borderWidth: 1.8, borderRadius: 10 },
-              { label: "Burned (kcal)", data: Object.values(byDate).map(v => v.burn), backgroundColor: mintHatch, borderColor: "#34d399", borderWidth: 1.8, borderRadius: 10 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false }
-        });
+        const fitTrendCtx = document.getElementById("chartFitnessTrend");
+        if (fitTrendCtx) {
+          charts.fitTrend = new Chart(fitTrendCtx, {
+            type: "bar",
+            data: {
+              labels: fitDates.length ? fitDates.map(d => d.slice(5)) : ["No Data"],
+              datasets: [
+                { label: "Duration (min)", data: fitDates.length ? fitDates.map(d => byDate[d].min) : [0], backgroundColor: cyanHatch, borderColor: "#38bdf8", borderWidth: 1.8, borderRadius: 8 },
+                { label: "Burned (kcal)", data: fitDates.length ? fitDates.map(d => byDate[d].burn) : [0], backgroundColor: mintHatch, borderColor: "#34d399", borderWidth: 1.8, borderRadius: 8 }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+          });
+        }
 
-        const cardioMin = fFit.filter(f => f.category === "Cardio").reduce((s, x) => s + x.durationMin, 0);
-        const strengthMin = fFit.filter(f => f.category === "Strength Training").reduce((s, x) => s + x.durationMin, 0);
+        const cardioMin = fFit.filter(f => f.category === "Cardio").reduce((s, x) => s + (Number(x.durationMin) || 0), 0);
+        const strengthMin = fFit.filter(f => f.category === "Strength Training").reduce((s, x) => s + (Number(x.durationMin) || 0), 0);
         destroyChart("fitCat");
-        charts.fitCat = new Chart(document.getElementById("chartFitCategory"), {
-          type: "doughnut",
-          data: {
-            labels: ["Cardio (min)", "Strength (min)"],
-            datasets: [{
-              data: [cardioMin, strengthMin],
-              backgroundColor: [cyanHatch, violetHatch],
-              borderColor: ["#38bdf8", "#a78bfa"],
-              borderWidth: 2
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: "66%",
-            plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
-          }
-        });
+        const fitCatCtx = document.getElementById("chartFitCategory");
+        if (fitCatCtx) {
+          charts.fitCat = new Chart(fitCatCtx, {
+            type: "doughnut",
+            data: {
+              labels: ["Cardio (min)", "Strength (min)"],
+              datasets: [{
+                data: (cardioMin + strengthMin) > 0 ? [cardioMin, strengthMin] : [1, 1],
+                backgroundColor: [cyanHatch, violetHatch],
+                borderColor: ["#38bdf8", "#a78bfa"],
+                borderWidth: 2
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: "66%",
+              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+          });
+        }
 
         const bpMap = {};
         fFit.filter(f => f.category === "Strength Training").forEach(f => {
           const bp = f.bodyPart || "Full Body";
-          bpMap[bp] = (bpMap[bp] || 0) + f.durationMin;
+          bpMap[bp] = (bpMap[bp] || 0) + (Number(f.durationMin) || 0);
         });
         destroyChart("bodyParts");
-        charts.bodyParts = new Chart(document.getElementById("chartBodyParts"), {
-          type: "bar",
-          data: {
-            labels: Object.keys(bpMap).length ? Object.keys(bpMap) : ["No Strength Logs"],
-            datasets: [{
-              label: "Minutes",
-              data: Object.values(bpMap).length ? Object.values(bpMap) : [0],
-              backgroundColor: violetHatch,
-              borderColor: "#a78bfa",
-              borderWidth: 1.8,
-              borderRadius: 10
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-        });
+        const bpCtx = document.getElementById("chartBodyParts");
+        if (bpCtx) {
+          charts.bodyParts = new Chart(bpCtx, {
+            type: "bar",
+            data: {
+              labels: Object.keys(bpMap).length ? Object.keys(bpMap) : ["No Strength Logs"],
+              datasets: [{
+                label: "Minutes",
+                data: Object.values(bpMap).length ? Object.values(bpMap) : [0],
+                backgroundColor: violetHatch,
+                borderColor: "#a78bfa",
+                borderWidth: 1.8,
+                borderRadius: 8
+              }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+          });
+        }
       }
     }
+
+    // ==================== NAME-BASED USER SELECTION, TRANSLUCENT LOADER & CACHE SYNC ====================
+    const DATA_CACHE_KEY = "vitapulse_sheet_cache_v1";
+    let hasSelectedMemberExplicitly = false;
+
+    function matchProfileByFirstName(rawFirstName, profileList) {
+      const clean = String(rawFirstName || "").trim().toLowerCase();
+      if (!clean || !Array.isArray(profileList)) return null;
+      let found = profileList.find(p => String(p.name || "").trim().toLowerCase() === clean);
+      if (found) return found;
+      if (clean === "hina") found = profileList.find(p => String(p.name || "").trim().toLowerCase() === "heena");
+      if (!found && clean === "heena") found = profileList.find(p => String(p.name || "").trim().toLowerCase() === "hina");
+      if (found) return found;
+      return profileList.find(p => String(p.name || "").trim().toLowerCase().startsWith(clean)) || null;
+    }
+
+    function applyEnteredUserSelection(profileList) {
+      const fn = (localStorage.getItem("vitapulse_first_name") || "").trim();
+      const ln = (localStorage.getItem("vitapulse_last_name") || "").trim();
+      const statusSub = document.getElementById("syncStatusSub");
+      if (statusSub && fn) {
+        const fullName = [fn, ln].filter(Boolean).join(" ");
+        statusSub.textContent = `${fullName} • Google Sheets`;
+      }
+      if (!fn || hasSelectedMemberExplicitly) return;
+      const matched = matchProfileByFirstName(fn, profileList);
+      if (matched && matched.name) {
+        selectedMember = matched.name;
+        const mealMemberEl = document.getElementById("mealMemberSelect");
+        if (mealMemberEl) mealMemberEl.value = matched.name;
+        const fitMemberEl = document.getElementById("fitMemberSelect");
+        if (fitMemberEl) fitMemberEl.value = matched.name;
+      }
+    }
+
+    function openUserSwitchModal() {
+      document.getElementById("firstNameInput").value = localStorage.getItem("vitapulse_first_name") || "";
+      document.getElementById("lastNameInput").value = localStorage.getItem("vitapulse_last_name") || "";
+      document.getElementById("pinInput").value = FAMILY_PIN;
+      document.getElementById("pinModal").classList.remove("hidden");
+    }
+
+    function showTranslucentSyncModal(show) {
+      const el = document.getElementById("translucentSyncModal");
+      if (!el) return;
+      el.classList.toggle("hidden", !show);
+    }
+
+    function setFloatingSyncPill(show, text = "Showing cached data • Syncing in background…") {
+      const pill = document.getElementById("floatingSyncPill");
+      const txt = document.getElementById("floatingSyncText");
+      if (!pill) return;
+      if (txt) txt.textContent = text;
+      pill.style.display = show ? "inline-flex" : "none";
+    }
+
+    function applyHydratedData(data) {
+      mealLogs = (data.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
+      fitnessLogs = (data.fitness || []).map(f => ({ ...f, date: normalizeDateStr(f.date) }));
+      progressPlan = data.progressPlan || [];
+      profiles = data.profiles && data.profiles.length > 0 ? data.profiles : [
+        { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "" },
+        { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "" }
+      ];
+
+      applyEnteredUserSelection(profiles);
+
+      const todayStr = getLocalDateStr(0);
+      const curFilterEl = document.getElementById("trackerFilterDate");
+      const mealFormDateEl = document.getElementById("mealDateInput");
+      if (mealLogs.length > 0) {
+        if (mealLogs.some(m => m.date === todayStr)) {
+          curFilterEl.value = todayStr;
+          if (mealFormDateEl && !mealFormDateEl.value) mealFormDateEl.value = todayStr;
+        } else if (!mealLogs.some(m => m.date === curFilterEl.value)) {
+          curFilterEl.value = mealLogs[0].date;
+          if (mealFormDateEl) mealFormDateEl.value = mealLogs[0].date;
+        }
+      }
+
+      populateMemberUI();
+      renderTrackerLists();
+      renderProfilesPage();
+      renderRoadmapPage();
+      if (currentPage === "analytics") renderAnalytics();
+    }
+
+    const _origSelectMember = selectMember;
+    selectMember = function(name) {
+      hasSelectedMemberExplicitly = true;
+      _origSelectMember(name);
+    };
+
+    unlockApp = function() {
+      const fn = document.getElementById("firstNameInput").value.trim();
+      const ln = document.getElementById("lastNameInput").value.trim();
+      const pin = document.getElementById("pinInput").value.trim();
+      const url = document.getElementById("apiUrlInput").value.trim();
+
+      if (!fn) return alert("Please enter your First Name.");
+      if (!pin) return alert("Please enter your Family PIN.");
+
+      hasSelectedMemberExplicitly = false;
+      localStorage.setItem("vitapulse_first_name", fn);
+      localStorage.setItem("vitapulse_last_name", ln);
+
+      if (url) {
+        APP_URL = url;
+        localStorage.setItem("vitapulse_url", url);
+      }
+      FAMILY_PIN = pin;
+      localStorage.setItem("vitapulse_pin", pin);
+
+      document.getElementById("pinModal").classList.add("hidden");
+      syncAllData();
+    };
+
+    syncAllData = async function() {
+      const rawCache = localStorage.getItem(DATA_CACHE_KEY);
+      let hasCache = false;
+      if (rawCache) {
+        try {
+          const parsed = JSON.parse(rawCache);
+          if (parsed && (Array.isArray(parsed.meals) || Array.isArray(parsed.profiles))) {
+            applyHydratedData(parsed);
+            hasCache = true;
+            setFloatingSyncPill(true, "Showing cached data • Syncing in background…");
+          }
+        } catch (e) {}
+      }
+
+      const fallbackSeed = {
+        profiles: [
+          { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "Recomp & fat loss (~2 kg/mo) with 125g protein and 1.0x conservative base burn.", bmr: 1555, tdee: 1555, deficitTarget: 250 },
+          { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "Sustainable fat loss & toning (~3 kg/mo) with 105g protein and 1.0x conservative base burn.", bmr: 1478, tdee: 1478, deficitTarget: 300 },
+          { id: "USR-1795259916090", name: "Samarth", gender: "Male", age: 4, weightKg: 17.6, heightCm: 114, waistCm: 56, bmi: 13.5, bodyFatPct: 12.1, goal: "Build Muscle & Gain Strength", conditions: "None", targetWeightKg: 19.2, calTarget: 1450, proteinTarget: 45, carbsTarget: 195, fatsTarget: 52, fiberTarget: 20, aiPlanSummary: "Muscle & strength growth for 4yo with 45g protein target.", bmr: 895, tdee: 895, deficitTarget: 0 },
+          { id: "USR-1795259980698", name: "Hiyansh", gender: "Male", age: 1, weightKg: 7, heightCm: 69, waistCm: 39, bmi: 14.7, bodyFatPct: 15.1, goal: "Catch-Up Growth (Height & Weight)", conditions: "Underweight / Under-height (<3rd %ile) | Pure Veg | 50% Breastmilk + 50% Solids", targetWeightKg: 8.6, calTarget: 1000, proteinTarget: 28, carbsTarget: 125, fatsTarget: 42, fiberTarget: 12, aiPlanSummary: "Catch-up growth (~50% breastmilk + ~50% pure veg solids) with 28g protein target.", bmr: 372, tdee: 372, deficitTarget: 0 }
+        ],
+        meals: [
+          { id: "LOG-20261121-DIN1", date: "2026-11-21", member: "Vikas", meal: "Dinner", items: [{ name: "Pani Puri (16 Puris + Kala Chana, Potato, Onion & Spiced Pani)", qty: 2, unit_label: "plates (8 puris/plate)", calories: 980, protein: 31.4, carbs: 160.0, fats: 46.2, fiber: 17.8 }, { name: "Vada Pav (Pav + Batata Vada + Shredded Garnish & Green Chili)", qty: 1, unit_label: "vada pav", calories: 395, protein: 10.0, carbs: 51.0, fats: 16.8, fiber: 3.8 }], calories: 1375, protein: 41.4, carbs: 211.0, fats: 63.0, fiber: 21.6, photoUrl: "", notes: "2 plates pani puri + 1 vada pav" },
+          { id: "LOG-20261121-SAM-DIN1", date: "2026-11-21", member: "Samarth", meal: "Dinner", items: [{ name: "Dal Rice (Tempered Yellow Dal & Rice)", qty: 1, unit_label: "plate (~160g)", calories: 222, protein: 6.9, carbs: 39.5, fats: 3.6, fiber: 2.6 }, { name: "Crushed Pani Puri with Kala Chana", qty: 5, unit_label: "puris + chana mix", calories: 270, protein: 7.2, carbs: 34.7, fats: 11.7, fiber: 3.7 }], calories: 492, protein: 14.1, carbs: 74.2, fats: 15.3, fiber: 6.3, photoUrl: "", notes: "Dal rice + 5 crushed puris with kala chana" },
+          { id: "LOG-20261121-SAM-LNS1", date: "2026-11-21", member: "Samarth", meal: "Late Night Snack", items: [{ name: "Ripe Banana (Large)", qty: 1, unit_label: "1 large (~135g edible)", calories: 120, protein: 1.5, carbs: 30.8, fats: 0.4, fiber: 3.5 }], calories: 120, protein: 1.5, carbs: 30.8, fats: 0.4, fiber: 3.5, photoUrl: "", notes: "1 big ripe banana" }
+        ],
+        fitness: [],
+        progressPlan: []
+      };
+
+      if (!hasCache) {
+        applyHydratedData(fallbackSeed);
+        showTranslucentSyncModal(true);
+      }
+
+      const safetyTimer = setTimeout(() => {
+        showTranslucentSyncModal(false);
+        setFloatingSyncPill(false);
+        document.getElementById("syncStatusSub").textContent = hasCache ? "Cached View" : "Ready • Local View";
+      }, 4500);
+
+      try {
+        const controller = new AbortController();
+        const fetchTimeout = setTimeout(() => controller.abort(), 4200);
+        const res = await fetch(`${APP_URL}?pin=${encodeURIComponent(FAMILY_PIN)}`, {
+          method: "GET",
+          credentials: "omit",
+          signal: controller.signal
+        });
+        clearTimeout(fetchTimeout);
+        const data = await res.json();
+        clearTimeout(safetyTimer);
+
+        if (data && data.status === "error") {
+          showTranslucentSyncModal(false);
+          setFloatingSyncPill(false);
+          alert(data.message);
+          openSettings();
+          return;
+        }
+
+        if (data && (Array.isArray(data.meals) || Array.isArray(data.profiles))) {
+          localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data));
+          applyHydratedData(data);
+        }
+        showTranslucentSyncModal(false);
+        setFloatingSyncPill(false);
+        const fn = localStorage.getItem("vitapulse_first_name");
+        const ln = localStorage.getItem("vitapulse_last_name");
+        document.getElementById("syncStatusSub").textContent = fn
+          ? `${[fn, ln].filter(Boolean).join(" ")} • Synced`
+          : "Synced • Google Sheets";
+      } catch (err) {
+        clearTimeout(safetyTimer);
+        console.warn("Background sync fallback:", err);
+        showTranslucentSyncModal(false);
+        setFloatingSyncPill(false);
+        document.getElementById("syncStatusSub").textContent = hasCache ? "Cached • Offline" : "Offline / Ready";
+      }
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const savedFn = localStorage.getItem("vitapulse_first_name");
+      const savedLn = localStorage.getItem("vitapulse_last_name");
+      if (savedFn && document.getElementById("firstNameInput")) {
+        document.getElementById("firstNameInput").value = savedFn;
+      }
+      if (savedLn && document.getElementById("lastNameInput")) {
+        document.getElementById("lastNameInput").value = savedLn;
+      }
+    });
   </script>
 </body>
 </html>
