@@ -144,6 +144,44 @@
 
     .long-press-target { transition: transform 0.15s ease, border-color 0.2s ease; }
     .long-press-target:active { transform: scale(0.985); }
+
+    /* Stacked Photo Thumbnail Deck */
+    .photo-deck {
+      position: relative;
+      width: 68px;
+      height: 68px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .photo-deck-card {
+      position: absolute;
+      inset: 0;
+      width: 62px;
+      height: 62px;
+      border-radius: 1rem;
+      object-fit: cover;
+      border: 1.5px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55);
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+      background-color: #181c26;
+    }
+    .photo-deck-card.layer-0 {
+      z-index: 30;
+      transform: translate(0px, 0px) rotate(0deg);
+    }
+    .photo-deck-card.layer-1 {
+      z-index: 20;
+      transform: translate(5px, 4px) rotate(5deg);
+      opacity: 0.88;
+    }
+    .photo-deck-card.layer-2 {
+      z-index: 10;
+      transform: translate(9px, 7px) rotate(9deg);
+      opacity: 0.72;
+    }
+    .photo-deck:hover .photo-deck-card.layer-1 {
+      transform: translate(8px, 5px) rotate(7deg);
+    }
   </style>
 </head>
 <body class="pb-16 selection:bg-emerald-400/25 selection:text-emerald-100">
@@ -338,28 +376,28 @@
           </div>
         </div>
 
-        <!-- Daily Calorie Deficit & Burn Card -->
+        <!-- Goal-Aware Focus Card: Calorie Deficit (Fat Loss) OR Protein Goal (Strength / Growth) -->
         <section id="dailyDeficitCard" class="studio-card rounded-3xl p-4 border border-emerald-400/25 space-y-2.5">
           <div class="flex items-center justify-between gap-2">
             <div>
-              <div class="text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300">Daily Deficit & Burn Target</div>
+              <div id="deficitCardEyebrow" class="text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300">Daily Deficit & Burn Target</div>
               <div id="deficitStatusHeadline" class="text-sm font-bold text-white mt-0.5">Net Deficit: 0 kcal</div>
             </div>
             <span id="deficitGoalBadge" class="font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-400/30">Target: —</span>
           </div>
           <div class="grid grid-cols-3 gap-2 text-center font-mono-num">
             <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
-              <div class="text-[9px] text-zinc-500 uppercase">Total Burn</div>
+              <div id="defBox1Label" class="text-[9px] text-zinc-500 uppercase">Total Burn (1.0x)</div>
               <div id="defTotalBurnVal" class="text-xs font-bold text-sky-300 mt-0.5">0 kcal</div>
               <div id="defBurnBreakdown" class="text-[9px] text-zinc-500 mt-0.5">Base + Ex</div>
             </div>
             <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
-              <div class="text-[9px] text-zinc-500 uppercase">Food Intake</div>
+              <div id="defBox2Label" class="text-[9px] text-zinc-500 uppercase">Food Intake</div>
               <div id="defFoodIntakeVal" class="text-xs font-bold text-amber-300 mt-0.5">0 kcal</div>
-              <div class="text-[9px] text-zinc-500 mt-0.5">Logged meals</div>
+              <div id="defBox2Sub" class="text-[9px] text-zinc-500 mt-0.5">Logged meals</div>
             </div>
             <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
-              <div class="text-[9px] text-zinc-500 uppercase">Daily Deficit</div>
+              <div id="defBox3Label" class="text-[9px] text-zinc-500 uppercase">Daily Deficit</div>
               <div id="defActualVal" class="text-xs font-bold text-emerald-300 mt-0.5">0 kcal</div>
               <div id="defTargetHint" class="text-[9px] text-zinc-500 mt-0.5">Goal: —</div>
             </div>
@@ -984,6 +1022,9 @@
       <button id="actionEditBtn" class="w-full py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-100 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
         ✏️ Edit Quantities / Details
       </button>
+      <button id="actionPhotoBtn" class="w-full py-3 rounded-2xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/35 text-cyan-200 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+        📸 Add Food Picture
+      </button>
       <button id="actionDupBtn" class="w-full py-3 rounded-2xl bg-emerald-400/15 hover:bg-emerald-400/25 border border-emerald-400/30 text-emerald-200 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
         📋 Duplicate for Family Member
       </button>
@@ -991,6 +1032,70 @@
         🗑️ Delete Entry
       </button>
       <button onclick="closeModal('actionSheetModal')" class="w-full py-2 text-[11px] font-semibold text-zinc-500">Dismiss</button>
+    </div>
+  </div>
+
+  <!-- 7. Add / Manage Food Pictures Pop-Up (Multi-Image Selector -> Google Drive + Sheet) -->
+  <div id="addPhotoModal" onclick="closeModal('addPhotoModal')" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div onclick="event.stopPropagation()" class="studio-card-mint studio-modal-box rounded-3xl max-w-md w-full p-6 my-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300/85">Meal Gallery & Drive Sync</div>
+          <h3 class="font-serif-editorial font-bold text-white text-2xl">Add Food Pictures</h3>
+        </div>
+        <button onclick="closeModal('addPhotoModal')" class="w-8 h-8 rounded-full bg-white/10 text-zinc-300 text-xs">✕</button>
+      </div>
+      <p id="addPhotoSub" class="text-xs text-zinc-400 mb-3.5 leading-relaxed">
+        Select one or multiple food photos from your gallery or camera. They will be compressed, saved to Google Drive, and stacked as cards on this meal.
+      </p>
+      <input type="hidden" id="photoTargetMealId" />
+
+      <div id="existingPhotosPreview" class="mb-3.5 hidden">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Saved Pictures on This Meal</span>
+          <button type="button" onclick="clearSavedMealPhotos()" class="text-[10px] font-bold text-rose-400 hover:underline">Remove All</button>
+        </div>
+        <div id="existingPhotosGrid" class="flex gap-2 overflow-x-auto pb-1 no-scrollbar"></div>
+      </div>
+
+      <label class="block w-full py-5 px-4 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/15 border border-dashed border-cyan-400/50 text-center cursor-pointer transition mb-3.5">
+        <div class="text-2xl mb-1">📷</div>
+        <div class="text-xs font-bold text-cyan-200">Tap to Select Food Pictures</div>
+        <div class="text-[10px] text-zinc-400 mt-0.5">Supports selecting multiple images at once</div>
+        <input type="file" id="mealMultiPhotoInput" accept="image/*" multiple onchange="handleMultiPhotoSelect(event)" class="hidden" />
+      </label>
+
+      <div id="selectedNewPhotosGrid" class="grid grid-cols-3 gap-2 mb-4 hidden"></div>
+
+      <div class="flex gap-2.5">
+        <button onclick="closeModal('addPhotoModal')" class="w-1/3 py-3 rounded-2xl bg-white/5 text-zinc-400 text-xs font-bold">Cancel</button>
+        <button id="saveMealPhotosBtn" onclick="saveSelectedMealPhotos()" class="btn-vitality w-2/3 py-3 rounded-2xl text-xs uppercase tracking-wider">Save Pictures</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. Stacked Photo Lightbox Viewer Pop-Up -->
+  <div id="photoLightboxModal" onclick="closeModal('photoLightboxModal')" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <div onclick="event.stopPropagation()" class="studio-card-mint studio-modal-box rounded-3xl max-w-md w-full p-5 space-y-3.5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div id="lightboxTitle" class="font-bold text-white text-sm">Meal Photos</div>
+          <div id="lightboxCounter" class="font-mono-num text-[10px] text-emerald-300 mt-0.5">Card 1 of 1</div>
+        </div>
+        <button onclick="closeModal('photoLightboxModal')" class="w-8 h-8 rounded-full bg-white/10 text-zinc-300 text-xs">✕</button>
+      </div>
+
+      <div class="relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center min-h-[240px] max-h-[58vh]">
+        <img id="lightboxMainImg" src="" alt="Food Picture" class="max-h-[56vh] w-auto object-contain rounded-xl" />
+      </div>
+
+      <div id="lightboxThumbStrip" class="flex items-center justify-center gap-2 overflow-x-auto py-1"></div>
+
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <button type="button" onclick="stepLightbox(-1)" class="px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-zinc-200">← Prev</button>
+        <button type="button" id="lightboxAddMoreBtn" class="px-4 py-2.5 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 text-xs font-bold text-cyan-200">+ Add More</button>
+        <button type="button" onclick="stepLightbox(1)" class="px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-zinc-200">Next →</button>
+      </div>
     </div>
   </div>
 
@@ -1917,37 +2022,35 @@
       `).join("");
     }
 
+    function isFatLossGoal(prof) {
+      if (!prof) return false;
+      const g = String(prof.goal || "").toLowerCase();
+      return /lean|fat loss|weight loss/i.test(g);
+    }
+
     function computeBaselineBurn(prof) {
-      if (!prof) return { bmr: 1500, tdee: 1800, deficitTarget: 450 };
-      if (prof.tdee && prof.bmr) {
-        return {
-          bmr: Number(prof.bmr) || 1500,
-          tdee: Number(prof.tdee) || 1800,
-          deficitTarget: Number(prof.deficitTarget) || 0
-        };
-      }
+      if (!prof) return { bmr: 1555, tdee: 1555, deficitTarget: 250 };
       const w = Number(prof.weightKg) || 68;
       const h = Number(prof.heightCm) || 165;
       const a = Number(prof.age) || 30;
       const g = prof.gender || "Male";
-      let bmr = 0;
+      let calcBmr = 0;
       if (a <= 3) {
-        bmr = g === "Male" ? (60.9 * w - 54) : (61.0 * w - 51);
+        calcBmr = g === "Male" ? (60.9 * w - 54) : (61.0 * w - 51);
       } else if (a <= 10) {
-        bmr = g === "Male" ? (22.7 * w + 495) : (22.5 * w + 499);
+        calcBmr = g === "Male" ? (22.7 * w + 495) : (22.5 * w + 499);
       } else {
         const base = (10 * w) + (6.25 * h) - (5 * a);
-        bmr = g === "Male" ? (base + 5) : (base - 161);
+        calcBmr = g === "Male" ? (base + 5) : (base - 161);
       }
-      bmr = Math.max(250, Math.round(bmr));
-      const actStr = String(prof.activityLevel || "");
-      let mult = 1.2;
-      if (/1-3x/i.test(actStr)) mult = 1.375;
-      else if (/3-5x/i.test(actStr)) mult = 1.55;
-      else if (/6-7x/i.test(actStr)) mult = 1.725;
-      else if (a <= 5) mult = 1.45;
-      const tdee = Math.round(bmr * mult);
-      const deficitTarget = prof.deficitTarget !== undefined ? Number(prof.deficitTarget) : (a > 12 ? 450 : 0);
+      calcBmr = Math.max(250, Math.round(calcBmr));
+      // Conservative 1.0x BMR baseline for everyone (no 1.2x multiplier)
+      const bmr = Number(prof.bmr) > 0 ? Number(prof.bmr) : calcBmr;
+      const tdee = bmr;
+      const fatLoss = isFatLossGoal(prof);
+      const deficitTarget = fatLoss
+        ? (Number(prof.deficitTarget) > 0 ? Number(prof.deficitTarget) : 250)
+        : 0;
       return { bmr, tdee, deficitTarget };
     }
 
@@ -2163,13 +2266,21 @@
         : "Edit workout or delete entry";
 
       const dupBtn = document.getElementById("actionDupBtn");
+      const photoBtn = document.getElementById("actionPhotoBtn");
       dupBtn.classList.toggle("hidden", type !== "meal");
+      if (photoBtn) photoBtn.classList.toggle("hidden", type !== "meal");
 
       document.getElementById("actionEditBtn").onclick = () => {
         closeModal("actionSheetModal");
         if (type === "meal") openEditMealModal(id);
         else openEditFitnessModal(id);
       };
+      if (photoBtn) {
+        photoBtn.onclick = () => {
+          closeModal("actionSheetModal");
+          openAddPhotoModal(id);
+        };
+      }
       dupBtn.onclick = () => {
         closeModal("actionSheetModal");
         openDuplicateMealModal(id);
@@ -2183,6 +2294,244 @@
     }
 
     function closeModal(id) { document.getElementById(id).classList.add("hidden"); }
+
+    function parsePhotoUrls(raw) {
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw.filter(Boolean);
+      const s = String(raw).trim();
+      if (!s) return [];
+      if (s.startsWith("[")) {
+        try {
+          const arr = JSON.parse(s);
+          if (Array.isArray(arr)) return arr.map(u => String(u).trim()).filter(Boolean);
+        } catch (e) {}
+      }
+      return s.split(/\s*[|,]\s*/).map(u => u.trim()).filter(Boolean);
+    }
+
+    function renderPhotoDeckHtml(log) {
+      const urls = parsePhotoUrls(log.photoUrl);
+      if (urls.length === 0) return "";
+      const visible = urls.slice(0, 3);
+      const cardsHtml = visible.map((url, idx) => `
+        <img src="${url}" alt="${log.meal} ${idx + 1}" class="photo-deck-card layer-${idx}" />
+      `).join("");
+      const badgeHtml = urls.length > 1
+        ? `<span class="absolute -bottom-1 -right-1 z-40 font-mono-num text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-400 text-zinc-950 shadow-md border border-zinc-950">+${urls.length - 1}</span>`
+        : "";
+      return `
+        <div onclick="event.stopPropagation(); openPhotoLightbox('${log.id}', 0)"
+             onmousedown="event.stopPropagation()"
+             ontouchstart="event.stopPropagation()"
+             title="Tap to view ${urls.length} food picture${urls.length > 1 ? "s" : ""}"
+             class="photo-deck">
+          ${cardsHtml}
+          ${badgeHtml}
+        </div>
+      `;
+    }
+
+    let pendingCompressedImages = [];
+    let lightboxPhotos = [];
+    let lightboxIndex = 0;
+    let lightboxMealId = "";
+
+    function compressImageToBase64(file, maxDim = 900, quality = 0.78) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              } else {
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
+              }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL("image/jpeg", quality);
+            resolve({
+              dataUrl,
+              base64: dataUrl.split(",")[1],
+              mimeType: "image/jpeg"
+            });
+          };
+          img.onerror = reject;
+          img.src = ev.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function openAddPhotoModal(mealId) {
+      const entry = mealLogs.find(m => m.id === mealId);
+      if (!entry) return;
+      document.getElementById("photoTargetMealId").value = mealId;
+      document.getElementById("addPhotoSub").textContent = `${entry.member} • ${entry.meal} (${entry.date}) — Select one or multiple photos to stack as cards.`;
+      document.getElementById("mealMultiPhotoInput").value = "";
+      pendingCompressedImages = [];
+
+      const newGrid = document.getElementById("selectedNewPhotosGrid");
+      newGrid.innerHTML = "";
+      newGrid.classList.add("hidden");
+
+      const existing = parsePhotoUrls(entry.photoUrl);
+      const exWrap = document.getElementById("existingPhotosPreview");
+      const exGrid = document.getElementById("existingPhotosGrid");
+      if (existing.length > 0) {
+        exWrap.classList.remove("hidden");
+        exGrid.innerHTML = existing.map((u, i) => `
+          <div class="relative w-16 h-16 flex-shrink-0">
+            <img src="${u}" class="w-16 h-16 rounded-xl object-cover border border-white/15" />
+            <button type="button" onclick="removeSingleSavedPhoto('${mealId}', ${i})"
+              class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow">✕</button>
+          </div>
+        `).join("");
+      } else {
+        exWrap.classList.add("hidden");
+        exGrid.innerHTML = "";
+      }
+
+      document.getElementById("addPhotoModal").classList.remove("hidden");
+    }
+
+    async function handleMultiPhotoSelect(event) {
+      const files = Array.from(event.target.files || []);
+      if (files.length === 0) return;
+      showToast(`Preparing ${files.length} photo${files.length > 1 ? "s" : ""}...`);
+      pendingCompressedImages = [];
+      for (const f of files) {
+        const comp = await compressImageToBase64(f, 900, 0.78);
+        pendingCompressedImages.push(comp);
+      }
+      const grid = document.getElementById("selectedNewPhotosGrid");
+      grid.classList.remove("hidden");
+      grid.innerHTML = pendingCompressedImages.map((imgObj, idx) => `
+        <div class="relative aspect-square rounded-2xl overflow-hidden border border-cyan-400/35 bg-black/40">
+          <img src="${imgObj.dataUrl}" class="w-full h-full object-cover" />
+          <span class="absolute bottom-1 left-1 font-mono-num text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-cyan-200">#${idx + 1}</span>
+        </div>
+      `).join("");
+    }
+
+    async function saveSelectedMealPhotos() {
+      const mealId = document.getElementById("photoTargetMealId").value;
+      if (!mealId) return;
+      if (pendingCompressedImages.length === 0) {
+        return alert("Please select at least one food picture first.");
+      }
+
+      const btn = document.getElementById("saveMealPhotosBtn");
+      btn.disabled = true;
+      btn.textContent = "Uploading to Drive...";
+
+      try {
+        const res = await postToBackend({
+          action: "attachMealPhotos",
+          id: mealId,
+          images: pendingCompressedImages.map(im => ({
+            base64: im.base64,
+            mimeType: im.mimeType
+          }))
+        });
+        if (res.status === "success") {
+          mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
+          closeModal("addPhotoModal");
+          renderTrackerLists();
+          showToast(`Saved ${pendingCompressedImages.length} food picture${pendingCompressedImages.length > 1 ? "s" : ""}!`);
+        } else {
+          alert("Upload error: " + (res.message || "Could not save photos"));
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Network error uploading photos. Please check your Apps Script deployment.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Save Pictures";
+      }
+    }
+
+    async function removeSingleSavedPhoto(mealId, photoIdx) {
+      const entry = mealLogs.find(m => m.id === mealId);
+      if (!entry) return;
+      const urls = parsePhotoUrls(entry.photoUrl);
+      urls.splice(photoIdx, 1);
+      showToast("Updating photos...");
+      const res = await postToBackend({
+        action: "updateMealPhotoUrls",
+        id: mealId,
+        photoUrls: urls
+      });
+      if (res.status === "success") {
+        mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
+        openAddPhotoModal(mealId);
+        renderTrackerLists();
+        showToast("Photo removed");
+      }
+    }
+
+    async function clearSavedMealPhotos() {
+      const mealId = document.getElementById("photoTargetMealId").value;
+      if (!mealId || !confirm("Remove all saved food pictures from this meal?")) return;
+      showToast("Clearing photos...");
+      const res = await postToBackend({
+        action: "updateMealPhotoUrls",
+        id: mealId,
+        photoUrls: []
+      });
+      if (res.status === "success") {
+        mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
+        closeModal("addPhotoModal");
+        renderTrackerLists();
+        showToast("All pictures removed");
+      }
+    }
+
+    function openPhotoLightbox(mealId, startIdx = 0) {
+      const entry = mealLogs.find(m => m.id === mealId);
+      if (!entry) return;
+      const urls = parsePhotoUrls(entry.photoUrl);
+      if (urls.length === 0) return;
+
+      lightboxMealId = mealId;
+      lightboxPhotos = urls;
+      lightboxIndex = Math.max(0, Math.min(urls.length - 1, startIdx));
+      document.getElementById("lightboxTitle").textContent = `${entry.member} • ${entry.meal} (${entry.date})`;
+      document.getElementById("lightboxAddMoreBtn").onclick = () => {
+        closeModal("photoLightboxModal");
+        openAddPhotoModal(mealId);
+      };
+      renderLightboxView();
+      document.getElementById("photoLightboxModal").classList.remove("hidden");
+    }
+
+    function stepLightbox(delta) {
+      if (lightboxPhotos.length === 0) return;
+      lightboxIndex = (lightboxIndex + delta + lightboxPhotos.length) % lightboxPhotos.length;
+      renderLightboxView();
+    }
+
+    function renderLightboxView() {
+      document.getElementById("lightboxMainImg").src = lightboxPhotos[lightboxIndex];
+      document.getElementById("lightboxCounter").textContent = `Picture ${lightboxIndex + 1} of ${lightboxPhotos.length}`;
+      const strip = document.getElementById("lightboxThumbStrip");
+      strip.innerHTML = lightboxPhotos.map((u, i) => `
+        <img src="${u}" onclick="lightboxIndex=${i}; renderLightboxView();"
+          class="w-12 h-12 rounded-xl object-cover cursor-pointer border-2 transition ${
+            i === lightboxIndex ? "border-emerald-400 scale-105" : "border-white/15 opacity-60 hover:opacity-100"
+          }" />
+      `).join("");
+    }
 
     function renderTrackerLists() {
       const preset = document.getElementById("mealDatePresetSelect")?.value || "selected";
@@ -2225,25 +2574,98 @@
       );
       const dayExerciseBurn = filteredFitForDate.reduce((s, f) => s + (Number(f.caloriesBurned) || 0), 0);
 
-      const activeBaselineList = selectedMember === "All"
-        ? profiles.map(p => computeBaselineBurn(p))
-        : (prof ? [computeBaselineBurn(prof)] : []);
-      const baseTdeeSum = activeBaselineList.reduce((s, b) => s + b.tdee, 0);
-      const deficitGoalSum = activeBaselineList.reduce((s, b) => s + b.deficitTarget, 0);
-      const totalBurnDay = baseTdeeSum + dayExerciseBurn;
-      const netDeficitDay = Math.round(totalBurnDay - cal);
+      const cardEl = document.getElementById("dailyDeficitCard");
+      const isStrengthOrGrowth = prof && !isFatLossGoal(prof);
 
-      document.getElementById("defTotalBurnVal").textContent = `${Math.round(totalBurnDay).toLocaleString()} kcal`;
-      document.getElementById("defBurnBreakdown").textContent = `Base ${Math.round(baseTdeeSum)} + Ex ${Math.round(dayExerciseBurn)}`;
-      document.getElementById("defFoodIntakeVal").textContent = `${Math.round(cal).toLocaleString()} kcal`;
-      document.getElementById("defActualVal").textContent = `${netDeficitDay >= 0 ? "+" : ""}${netDeficitDay.toLocaleString()} kcal`;
-      document.getElementById("defTargetHint").textContent = deficitGoalSum > 0 ? `Goal: ${deficitGoalSum} kcal` : "Growth / Maintenance";
-      document.getElementById("deficitGoalBadge").textContent = deficitGoalSum > 0
-        ? (netDeficitDay >= deficitGoalSum ? `✓ Hit ${deficitGoalSum} Goal` : `Goal: ${deficitGoalSum} kcal`)
-        : "Growth Mode";
-      document.getElementById("deficitStatusHeadline").textContent = netDeficitDay >= 0
-        ? `Calorie Deficit Today: ${netDeficitDay.toLocaleString()} kcal`
-        : `Calorie Surplus Today: ${Math.abs(netDeficitDay).toLocaleString()} kcal`;
+      if (isStrengthOrGrowth) {
+        // Strength & Muscle / Growth Focus -> Highlight Protein Intake & Target Met
+        const proTarget = Number(prof.proteinTarget) || 45;
+        const calTarget = Number(prof.calTarget) || 1450;
+        const proRemaining = Number((proTarget - pro).toFixed(1));
+        const proPct = proTarget > 0 ? Math.min(999, Math.round((pro / proTarget) * 100)) : 0;
+        const proMet = pro >= proTarget;
+
+        cardEl.style.borderColor = "rgba(6, 182, 212, 0.36)";
+        document.getElementById("deficitCardEyebrow").className = "text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-300";
+        document.getElementById("deficitCardEyebrow").textContent = "Muscle & Growth • Protein Focus";
+        document.getElementById("deficitStatusHeadline").textContent = proMet
+          ? `Protein Target Met: ${pro.toFixed(1)}g / ${proTarget}g (${proPct}%)`
+          : `Protein Needed: ${proRemaining}g left to hit ${proTarget}g`;
+
+        const badgeEl = document.getElementById("deficitGoalBadge");
+        badgeEl.className = proMet
+          ? "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/35"
+          : "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-cyan-500/15 text-cyan-200 border border-cyan-400/30";
+        badgeEl.textContent = proMet ? `✓ ${proTarget}g Protein Hit` : `${proPct}% of ${proTarget}g`;
+
+        document.getElementById("defBox1Label").textContent = "Protein Intake";
+        document.getElementById("defTotalBurnVal").className = "text-xs font-bold text-cyan-300 mt-0.5";
+        document.getElementById("defTotalBurnVal").textContent = `${pro.toFixed(1)} g`;
+        document.getElementById("defBurnBreakdown").textContent = `Target: ${proTarget}g`;
+
+        document.getElementById("defBox2Label").textContent = "Protein Gap";
+        document.getElementById("defFoodIntakeVal").className = proMet
+          ? "text-xs font-bold text-emerald-300 mt-0.5"
+          : "text-xs font-bold text-amber-300 mt-0.5";
+        document.getElementById("defFoodIntakeVal").textContent = proMet
+          ? `+${(pro - proTarget).toFixed(1)}g extra`
+          : `${proRemaining}g left`;
+        document.getElementById("defBox2Sub").textContent = proMet ? "Goal achieved" : "Remaining today";
+
+        document.getElementById("defBox3Label").textContent = "Energy Fuel";
+        document.getElementById("defActualVal").className = "text-xs font-bold text-emerald-300 mt-0.5";
+        document.getElementById("defActualVal").textContent = `${Math.round(cal)} / ${calTarget}`;
+        document.getElementById("defTargetHint").textContent = "kcal growth budget";
+      } else {
+        // Fat Loss / Get Lean Mode -> Highlight Calorie Deficit (Conservative 1.0x Base + Exercise)
+        const fatLossProfiles = selectedMember === "All"
+          ? profiles.filter(p => isFatLossGoal(p))
+          : (prof ? [prof] : []);
+        const activeBaselineList = fatLossProfiles.map(p => computeBaselineBurn(p));
+        const baseTdeeSum = activeBaselineList.reduce((s, b) => s + b.tdee, 0);
+        const deficitGoalSum = activeBaselineList.reduce((s, b) => s + b.deficitTarget, 0);
+
+        const fatLossCal = selectedMember === "All"
+          ? filteredMeals.filter(m => fatLossProfiles.some(fp => fp.name === m.member)).reduce((s, m) => s + m.calories, 0)
+          : cal;
+        const fatLossExBurn = selectedMember === "All"
+          ? filteredFitForDate.filter(f => fatLossProfiles.some(fp => fp.name === f.member)).reduce((s, f) => s + (Number(f.caloriesBurned) || 0), 0)
+          : dayExerciseBurn;
+
+        const totalBurnDay = baseTdeeSum + fatLossExBurn;
+        const netDeficitDay = Math.round(totalBurnDay - fatLossCal);
+
+        cardEl.style.borderColor = "rgba(16, 185, 129, 0.25)";
+        document.getElementById("deficitCardEyebrow").className = "text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300";
+        document.getElementById("deficitCardEyebrow").textContent = selectedMember === "All"
+          ? "Fat-Loss Members • Daily Deficit (1.0x Base)"
+          : "Fat Loss & Lean • Daily Deficit (1.0x Base)";
+
+        const badgeEl = document.getElementById("deficitGoalBadge");
+        badgeEl.className = "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-400/30";
+        badgeEl.textContent = netDeficitDay >= deficitGoalSum ? `✓ Hit ${deficitGoalSum} Goal` : `Goal: ${deficitGoalSum} kcal`;
+
+        document.getElementById("defBox1Label").textContent = "Total Burn (1.0x)";
+        document.getElementById("defTotalBurnVal").className = "text-xs font-bold text-sky-300 mt-0.5";
+        document.getElementById("defTotalBurnVal").textContent = `${Math.round(totalBurnDay).toLocaleString()} kcal`;
+        document.getElementById("defBurnBreakdown").textContent = `Base ${Math.round(baseTdeeSum)} + Ex ${Math.round(fatLossExBurn)}`;
+
+        document.getElementById("defBox2Label").textContent = "Food Intake";
+        document.getElementById("defFoodIntakeVal").className = "text-xs font-bold text-amber-300 mt-0.5";
+        document.getElementById("defFoodIntakeVal").textContent = `${Math.round(fatLossCal).toLocaleString()} kcal`;
+        document.getElementById("defBox2Sub").textContent = "Logged meals";
+
+        document.getElementById("defBox3Label").textContent = "Daily Deficit";
+        document.getElementById("defActualVal").className = netDeficitDay >= 0
+          ? "text-xs font-bold text-emerald-300 mt-0.5"
+          : "text-xs font-bold text-rose-400 mt-0.5";
+        document.getElementById("defActualVal").textContent = `${netDeficitDay >= 0 ? "+" : ""}${netDeficitDay.toLocaleString()} kcal`;
+        document.getElementById("defTargetHint").textContent = `Goal: ${deficitGoalSum} kcal`;
+
+        document.getElementById("deficitStatusHeadline").textContent = netDeficitDay >= 0
+          ? `Calorie Deficit Today: ${netDeficitDay.toLocaleString()} kcal`
+          : `Calorie Surplus Today: ${Math.abs(netDeficitDay).toLocaleString()} kcal`;
+      }
 
       const mealListEl = document.getElementById("mealLogsList");
       if (filteredMeals.length === 0) {
@@ -2258,7 +2680,7 @@
             ontouchend="cancelLongPress()"
             class="studio-card long-press-target rounded-3xl overflow-hidden select-none">
             <div class="p-4 flex gap-3.5 items-start">
-              ${log.photoUrl ? `<img src="${log.photoUrl}" alt="${log.meal}" class="w-16 h-16 rounded-2xl object-cover flex-shrink-0 bg-zinc-900 border border-white/10" />` : ""}
+              ${renderPhotoDeckHtml(log)}
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -2491,48 +2913,120 @@
           options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
 
-        const fitByDate = {};
-        [...fFit].reverse().forEach(f => {
-          fitByDate[f.date] = (fitByDate[f.date] || 0) + (Number(f.caloriesBurned) || 0);
-        });
-        const allDefDates = Array.from(new Set([...dates, ...Object.keys(fitByDate)])).sort();
-        const deficitSeries = allDefDates.map(d => {
-          const intakeVal = byDate[d] || 0;
-          const exVal = fitByDate[d] || 0;
-          return Math.round((baseTdeeSum + exVal) - intakeVal);
-        });
-        destroyChart("dailyDeficit");
-        charts.dailyDeficit = new Chart(document.getElementById("chartDailyDeficit"), {
-          type: "bar",
-          data: {
-            labels: allDefDates.map(d => d.slice(5)),
-            datasets: [
-              {
-                label: "Daily Deficit (kcal)",
-                data: deficitSeries,
-                backgroundColor: mintHatch,
-                borderColor: "#34d399",
-                borderWidth: 1.8,
-                borderRadius: 10
-              },
-              {
-                label: "Deficit Target",
-                data: allDefDates.map(() => deficitGoalSum),
-                type: "line",
-                borderColor: "#fbbf24",
-                borderDash: [6, 5],
-                borderWidth: 2,
-                pointRadius: 3,
-                pointBackgroundColor: "#fbbf24"
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-          }
-        });
+        const anDefTitle = document.querySelector("#chartDailyDeficit")?.closest("section")?.querySelector("h3");
+        const anDefSub = document.querySelector("#chartDailyDeficit")?.closest("section")?.querySelector("p");
+        const anDefBadge = document.querySelector("#chartDailyDeficit")?.closest("section")?.querySelector("span");
+
+        if (activeProf && !isFatLossGoal(activeProf)) {
+          // Strength / Muscle / Growth Member -> Show Daily Protein Intake vs Protein Target
+          if (anDefTitle) anDefTitle.textContent = "Daily Protein Intake vs. Protein Target";
+          if (anDefSub) anDefSub.textContent = "Protein grams logged each day against muscle & growth target";
+          if (anDefBadge) anDefBadge.textContent = "Protein Focus";
+
+          const proByDate = {};
+          [...fMeals].reverse().forEach(m => {
+            proByDate[m.date] = Number(((proByDate[m.date] || 0) + (Number(m.protein) || 0)).toFixed(1));
+          });
+          const proDates = Object.keys(proByDate);
+          const proVals = Object.values(proByDate);
+          const proGoal = Number(activeProf.proteinTarget) || 45;
+
+          destroyChart("dailyDeficit");
+          charts.dailyDeficit = new Chart(document.getElementById("chartDailyDeficit"), {
+            type: "bar",
+            data: {
+              labels: proDates.map(d => d.slice(5)),
+              datasets: [
+                {
+                  label: "Protein Intake (g)",
+                  data: proVals,
+                  backgroundColor: cyanHatch,
+                  borderColor: "#38bdf8",
+                  borderWidth: 1.8,
+                  borderRadius: 10
+                },
+                {
+                  label: "Protein Target (g)",
+                  data: proDates.map(() => proGoal),
+                  type: "line",
+                  borderColor: "#34d399",
+                  borderDash: [6, 5],
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  pointBackgroundColor: "#34d399"
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
+            }
+          });
+        } else {
+          // Fat Loss / Lean Members -> Show Daily Calorie Deficit (1.0x Base + Exercise)
+          if (anDefTitle) anDefTitle.textContent = "Daily Calorie Deficit vs. Deficit Goal (1.0x Base)";
+          if (anDefSub) anDefSub.textContent = "(1.0x BMR + Workout Burn) minus Food Intake each day";
+          if (anDefBadge) anDefBadge.textContent = "Deficit Watch";
+
+          const flProfs = selectedMember === "All"
+            ? profiles.filter(p => isFatLossGoal(p))
+            : (activeProf ? [activeProf] : []);
+          const baseList = flProfs.map(p => computeBaselineBurn(p));
+          const baseTdeeSum = baseList.reduce((s, b) => s + b.tdee, 0);
+          const deficitGoalSum = baseList.reduce((s, b) => s + b.deficitTarget, 0);
+
+          const flIntakeByDate = {};
+          [...fMeals].reverse().forEach(m => {
+            if (selectedMember !== "All" || flProfs.some(fp => fp.name === m.member)) {
+              flIntakeByDate[m.date] = (flIntakeByDate[m.date] || 0) + (Number(m.calories) || 0);
+            }
+          });
+          const fitByDate = {};
+          [...fFit].reverse().forEach(f => {
+            if (selectedMember !== "All" || flProfs.some(fp => fp.name === f.member)) {
+              fitByDate[f.date] = (fitByDate[f.date] || 0) + (Number(f.caloriesBurned) || 0);
+            }
+          });
+          const allDefDates = Array.from(new Set([...Object.keys(flIntakeByDate), ...Object.keys(fitByDate)])).sort();
+          const deficitSeries = allDefDates.map(d => {
+            const intakeVal = flIntakeByDate[d] || 0;
+            const exVal = fitByDate[d] || 0;
+            return Math.round((baseTdeeSum + exVal) - intakeVal);
+          });
+          destroyChart("dailyDeficit");
+          charts.dailyDeficit = new Chart(document.getElementById("chartDailyDeficit"), {
+            type: "bar",
+            data: {
+              labels: allDefDates.map(d => d.slice(5)),
+              datasets: [
+                {
+                  label: "Daily Deficit (kcal)",
+                  data: deficitSeries,
+                  backgroundColor: mintHatch,
+                  borderColor: "#34d399",
+                  borderWidth: 1.8,
+                  borderRadius: 10
+                },
+                {
+                  label: "Deficit Target",
+                  data: allDefDates.map(() => deficitGoalSum),
+                  type: "line",
+                  borderColor: "#fbbf24",
+                  borderDash: [6, 5],
+                  borderWidth: 2,
+                  pointRadius: 3,
+                  pointBackgroundColor: "#fbbf24"
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
+            }
+          });
+        }
 
       } else {
         const totalMin = fFit.reduce((s, x) => s + x.durationMin, 0);
