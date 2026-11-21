@@ -347,15 +347,12 @@
       </nav>
     </div>
 
-    <div class="p-4 border-t border-white/10 space-y-2">
-      <button onclick="syncAllData(); closeDrawer();" class="w-full py-3 px-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-emerald-300 flex items-center justify-center gap-2">
-        <span>↻</span> Sync Google Sheet
+    <div class="p-4 border-t border-white/10 grid grid-cols-2 gap-2.5">
+      <button onclick="syncAllData(); closeDrawer();" class="w-full py-3 px-3 rounded-2xl bg-emerald-400/15 hover:bg-emerald-400/25 border border-emerald-400/35 text-xs font-bold text-emerald-200 flex items-center justify-center gap-1.5 transition">
+        <span>↻</span> Sync Data
       </button>
-      <button onclick="openUserSwitchModal(); closeDrawer();" class="w-full py-2 px-4 rounded-xl text-[11px] font-medium text-zinc-400 hover:text-emerald-300">
-        👤 Switch Name / PIN
-      </button>
-      <button onclick="openSettings(); closeDrawer();" class="w-full py-2 px-4 rounded-xl text-[11px] font-medium text-zinc-500 hover:text-zinc-300">
-        ⚙️ Endpoint Settings
+      <button onclick="logoutTracker(); closeDrawer();" class="w-full py-3 px-3 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-xs font-bold text-rose-300 flex items-center justify-center gap-1.5 transition">
+        <span>⎋</span> Logout
       </button>
     </div>
   </aside>
@@ -1210,6 +1207,7 @@
     let selectedMember = "All";
     let selectedFitnessCat = "Cardio";
     let selectedBodyPart = "Full Body";
+    let hasSelectedMemberExplicitly = false;
 
     let profiles = [];
     let mealLogs = [];
@@ -1218,6 +1216,8 @@
 
     let editingMealItemsState = [];
     let charts = {};
+
+    const DATA_CACHE_KEY = "vitapulse_sheet_cache_v1";
 
     const CARDIO_ACTIVITIES = [
       "Brisk Walking", "Casual Walking", "Power Walking", "Running / Jogging",
@@ -1234,8 +1234,18 @@
     ];
     const BODY_PARTS = ["Full Body", "Chest", "Back", "Shoulders", "Arms (Biceps/Triceps)", "Legs & Glutes", "Core & Abs"];
 
+    function hexToRgba(hex, alpha) {
+      const clean = String(hex || "#34d399").replace("#", "");
+      const num = parseInt(clean, 16);
+      if (isNaN(num)) return `rgba(52, 211, 153, ${alpha})`;
+      const r = (num >> 16) & 255;
+      const g = (num >> 8) & 255;
+      const b = num & 255;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
     const _patternCache = {};
-    function createPencilPattern(strokeColor, bgAlpha = 0.14, angleDeg = -45, spacing = 6, lineWidth = 1.8) {
+    function createPencilPattern(strokeColor, bgAlpha = 0.16, angleDeg = -45, spacing = 6, lineWidth = 1.8) {
       const key = `${strokeColor}_${bgAlpha}_${angleDeg}_${spacing}_${lineWidth}`;
       if (_patternCache[key]) return _patternCache[key];
       try {
@@ -1275,9 +1285,11 @@
       return hexToRgba(strokeColor, 0.35);
     }
 
-    Chart.defaults.color = "#a1a1aa";
-    Chart.defaults.borderColor = "rgba(255, 255, 255, 0.07)";
-    Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+    if (typeof Chart !== "undefined") {
+      Chart.defaults.color = "#a1a1aa";
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.07)";
+      Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+    }
 
     function getLocalDateStr(offsetDays = 0) {
       const d = new Date();
@@ -1312,6 +1324,15 @@
       document.getElementById("manMealDate").value = today;
       document.getElementById("apiUrlInput").value = APP_URL;
 
+      const savedFn = localStorage.getItem("vitapulse_first_name");
+      const savedLn = localStorage.getItem("vitapulse_last_name");
+      if (savedFn && document.getElementById("firstNameInput")) {
+        document.getElementById("firstNameInput").value = savedFn;
+      }
+      if (savedLn && document.getElementById("lastNameInput")) {
+        document.getElementById("lastNameInput").value = savedLn;
+      }
+
       setFitnessCategory("Cardio");
       renderBodyPartChips();
 
@@ -1329,17 +1350,87 @@
       window._toastTimer = setTimeout(() => t.classList.add("hidden"), 3000);
     }
 
+    function matchProfileByFirstName(rawFirstName, profileList) {
+      const clean = String(rawFirstName || "").trim().toLowerCase();
+      if (!clean || !Array.isArray(profileList)) return null;
+      let found = profileList.find(p => String(p.name || "").trim().toLowerCase() === clean);
+      if (found) return found;
+      if (clean === "hina") found = profileList.find(p => String(p.name || "").trim().toLowerCase() === "heena");
+      if (!found && clean === "heena") found = profileList.find(p => String(p.name || "").trim().toLowerCase() === "hina");
+      if (found) return found;
+      return profileList.find(p => String(p.name || "").trim().toLowerCase().startsWith(clean)) || null;
+    }
+
+    function applyEnteredUserSelection(profileList) {
+      const fn = (localStorage.getItem("vitapulse_first_name") || "").trim();
+      const ln = (localStorage.getItem("vitapulse_last_name") || "").trim();
+      const statusSub = document.getElementById("syncStatusSub");
+      if (statusSub && fn) {
+        const fullName = [fn, ln].filter(Boolean).join(" ");
+        statusSub.textContent = `${fullName} • Google Sheets`;
+      }
+      if (!fn || hasSelectedMemberExplicitly) return;
+      const matched = matchProfileByFirstName(fn, profileList);
+      if (matched && matched.name) {
+        selectedMember = matched.name;
+        const mealMemberEl = document.getElementById("mealMemberSelect");
+        if (mealMemberEl) mealMemberEl.value = matched.name;
+        const fitMemberEl = document.getElementById("fitMemberSelect");
+        if (fitMemberEl) fitMemberEl.value = matched.name;
+      }
+    }
+
+    function openUserSwitchModal() {
+      document.getElementById("firstNameInput").value = localStorage.getItem("vitapulse_first_name") || "";
+      document.getElementById("lastNameInput").value = localStorage.getItem("vitapulse_last_name") || "";
+      document.getElementById("pinInput").value = FAMILY_PIN;
+      document.getElementById("pinModal").classList.remove("hidden");
+    }
+
+    function showTranslucentSyncModal(show) {
+      const el = document.getElementById("translucentSyncModal");
+      if (!el) return;
+      el.classList.toggle("hidden", !show);
+    }
+
+    function setFloatingSyncPill(show, text = "Showing cached data • Syncing in background…") {
+      const pill = document.getElementById("floatingSyncPill");
+      const txt = document.getElementById("floatingSyncText");
+      if (!pill) return;
+      if (txt) txt.textContent = text;
+      pill.style.display = show ? "inline-flex" : "none";
+    }
+
+    function logoutTracker() {
+      localStorage.removeItem("vitapulse_pin");
+      FAMILY_PIN = "";
+      hasSelectedMemberExplicitly = false;
+      document.getElementById("pinInput").value = "";
+      document.getElementById("pinModal").classList.remove("hidden");
+    }
+
     function unlockApp() {
+      const fn = document.getElementById("firstNameInput").value.trim();
+      const ln = document.getElementById("lastNameInput").value.trim();
       const pin = document.getElementById("pinInput").value.trim();
       const url = document.getElementById("apiUrlInput").value.trim();
+
+      if (!fn) return alert("Please enter your First Name.");
       if (!pin) return alert("Please enter your Family PIN.");
+
+      hasSelectedMemberExplicitly = false;
+      localStorage.setItem("vitapulse_first_name", fn);
+      localStorage.setItem("vitapulse_last_name", ln);
+
       if (url) {
         APP_URL = url;
         localStorage.setItem("vitapulse_url", url);
       }
       FAMILY_PIN = pin;
       localStorage.setItem("vitapulse_pin", pin);
+
       document.getElementById("pinModal").classList.add("hidden");
+      navigateTo("tracker");
       syncAllData();
     }
 
@@ -1408,50 +1499,127 @@
       if (currentPage === "tracker") renderTrackerLists();
     }
 
+    function applyHydratedData(data) {
+      mealLogs = (data.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
+      fitnessLogs = (data.fitness || []).map(f => ({ ...f, date: normalizeDateStr(f.date) }));
+      progressPlan = data.progressPlan || [];
+      profiles = data.profiles && data.profiles.length > 0 ? data.profiles : [
+        { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "" },
+        { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "" }
+      ];
+
+      applyEnteredUserSelection(profiles);
+
+      const todayStr = getLocalDateStr(0);
+      const curFilterEl = document.getElementById("trackerFilterDate");
+      const mealFormDateEl = document.getElementById("mealDateInput");
+      if (mealLogs.length > 0) {
+        if (mealLogs.some(m => m.date === todayStr)) {
+          curFilterEl.value = todayStr;
+          if (mealFormDateEl && !mealFormDateEl.value) mealFormDateEl.value = todayStr;
+        } else if (!mealLogs.some(m => m.date === curFilterEl.value)) {
+          curFilterEl.value = mealLogs[0].date;
+          if (mealFormDateEl) mealFormDateEl.value = mealLogs[0].date;
+        }
+      }
+
+      populateMemberUI();
+      if (!hasSelectedMemberExplicitly && currentPage === "profiles") {
+        currentPage = "tracker";
+        ["tracker", "roadmap", "analytics", "profiles"].forEach(p => {
+          document.getElementById(`view-${p}`).classList.toggle("hidden", p !== "tracker");
+        });
+        document.getElementById("pageBadge").textContent = "Tracker";
+        document.getElementById("memberBarWrapper").style.display = "flex";
+      }
+      renderTrackerLists();
+      renderProfilesPage();
+      renderRoadmapPage();
+      if (currentPage === "analytics") renderAnalytics();
+    }
+
     async function syncAllData() {
-      document.getElementById("syncStatusSub").textContent = "Syncing Sheet...";
+      const rawCache = localStorage.getItem(DATA_CACHE_KEY);
+      let hasCache = false;
+      if (rawCache) {
+        try {
+          const parsed = JSON.parse(rawCache);
+          if (parsed && Array.isArray(parsed.meals) && parsed.meals.length > 0) {
+            applyHydratedData(parsed);
+            hasCache = true;
+            setFloatingSyncPill(true, "Showing cached data • Syncing in background…");
+          }
+        } catch (e) {}
+      }
+
+      const fallbackSeed = {
+        profiles: [
+          { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "Recomp & fat loss (~2 kg/mo) with 125g protein and 1.0x conservative base burn.", bmr: 1555, tdee: 1555, deficitTarget: 250 },
+          { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "Sustainable fat loss & toning (~3 kg/mo) with 105g protein and 1.0x conservative base burn.", bmr: 1478, tdee: 1478, deficitTarget: 300 },
+          { id: "USR-1795259916090", name: "Samarth", gender: "Male", age: 4, weightKg: 17.6, heightCm: 114, waistCm: 56, bmi: 13.5, bodyFatPct: 12.1, goal: "Build Muscle & Gain Strength", conditions: "None", targetWeightKg: 19.2, calTarget: 1450, proteinTarget: 45, carbsTarget: 195, fatsTarget: 52, fiberTarget: 20, aiPlanSummary: "Muscle & strength growth for 4yo with 45g protein target.", bmr: 895, tdee: 895, deficitTarget: 0 },
+          { id: "USR-1795259980698", name: "Hiyansh", gender: "Male", age: 1, weightKg: 7, heightCm: 69, waistCm: 39, bmi: 14.7, bodyFatPct: 15.1, goal: "Catch-Up Growth (Height & Weight)", conditions: "Underweight / Under-height (<3rd %ile) | Pure Veg | 50% Breastmilk + 50% Solids", targetWeightKg: 8.6, calTarget: 1000, proteinTarget: 28, carbsTarget: 125, fatsTarget: 42, fiberTarget: 12, aiPlanSummary: "Catch-up growth (~50% breastmilk + ~50% pure veg solids) with 28g protein target.", bmr: 372, tdee: 372, deficitTarget: 0 }
+        ],
+        meals: [
+          { id: "LOG-20261121-1", date: "2026-11-21", member: "Vikas", meal: "Breakfast", items: [], calories: 360, protein: 8.3, carbs: 50.3, fats: 14.2, fiber: 3.5, photoUrl: "", notes: "Morning breakfast" },
+          { id: "LOG-20261121-2", date: "2026-11-21", member: "Vikas", meal: "Lunch", items: [], calories: 496, protein: 17.5, carbs: 81.7, fats: 11.5, fiber: 14.2, photoUrl: "", notes: "Afternoon lunch" },
+          { id: "LOG-20261121-DIN1", date: "2026-11-21", member: "Vikas", meal: "Dinner", items: [{ name: "Pani Puri (16 Puris + Kala Chana, Potato, Onion & Spiced Pani)", qty: 2, unit_label: "plates (8 puris/plate)", calories: 980, protein: 31.4, carbs: 160.0, fats: 46.2, fiber: 17.8 }, { name: "Vada Pav (Pav + Batata Vada + Shredded Garnish & Green Chili)", qty: 1, unit_label: "vada pav", calories: 395, protein: 10.0, carbs: 51.0, fats: 16.8, fiber: 3.8 }], calories: 1375, protein: 41.4, carbs: 211.0, fats: 63.0, fiber: 21.6, photoUrl: "", notes: "2 plates pani puri + 1 vada pav" },
+          { id: "LOG-20261121-SAM-DIN1", date: "2026-11-21", member: "Samarth", meal: "Dinner", items: [{ name: "Dal Rice (Tempered Yellow Dal & Rice)", qty: 1, unit_label: "plate (~160g)", calories: 222, protein: 6.9, carbs: 39.5, fats: 3.6, fiber: 2.6 }, { name: "Crushed Pani Puri with Kala Chana", qty: 5, unit_label: "puris + chana mix", calories: 270, protein: 7.2, carbs: 34.7, fats: 11.7, fiber: 3.7 }], calories: 492, protein: 14.1, carbs: 74.2, fats: 15.3, fiber: 6.3, photoUrl: "", notes: "Dal rice + 5 crushed puris with kala chana" },
+          { id: "LOG-20261121-SAM-LNS1", date: "2026-11-21", member: "Samarth", meal: "Late Night Snack", items: [{ name: "Ripe Banana (Large)", qty: 1, unit_label: "1 large (~135g edible)", calories: 120, protein: 1.5, carbs: 30.8, fats: 0.4, fiber: 3.5 }], calories: 120, protein: 1.5, carbs: 30.8, fats: 0.4, fiber: 3.5, photoUrl: "", notes: "1 big ripe banana" }
+        ],
+        fitness: [
+          { id: "FIT-20261121-1", date: "2026-11-21", member: "Vikas", category: "Cardio", activity: "Brisk Walking", bodyPart: "", durationMin: 40, stepsOrVolume: 5100, caloriesBurned: 205, notes: "Evening walk" }
+        ],
+        progressPlan: []
+      };
+
+      if (!hasCache) {
+        applyHydratedData(fallbackSeed);
+        showTranslucentSyncModal(true);
+      }
+
+      const safetyTimer = setTimeout(() => {
+        showTranslucentSyncModal(false);
+        setFloatingSyncPill(false);
+        document.getElementById("syncStatusSub").textContent = hasCache ? "Cached View" : "Ready • Local View";
+      }, 4500);
+
       try {
+        const controller = new AbortController();
+        const fetchTimeout = setTimeout(() => controller.abort(), 4200);
         const res = await fetch(`${APP_URL}?pin=${encodeURIComponent(FAMILY_PIN)}`, {
           method: "GET",
-          credentials: "omit"
+          credentials: "omit",
+          signal: controller.signal
         });
+        clearTimeout(fetchTimeout);
         const data = await res.json();
-        if (data.status === "error") {
+        clearTimeout(safetyTimer);
+
+        if (data && data.status === "error") {
+          showTranslucentSyncModal(false);
+          setFloatingSyncPill(false);
           alert(data.message);
           openSettings();
           return;
         }
-        mealLogs = (data.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
-        fitnessLogs = (data.fitness || []).map(f => ({ ...f, date: normalizeDateStr(f.date) }));
-        progressPlan = data.progressPlan || [];
-        profiles = data.profiles && data.profiles.length > 0 ? data.profiles : [
-          { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "" },
-          { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "" }
-        ];
 
-        const todayStr = getLocalDateStr(0);
-        const curFilterEl = document.getElementById("trackerFilterDate");
-        const mealFormDateEl = document.getElementById("mealDateInput");
-        if (mealLogs.length > 0) {
-          if (mealLogs.some(m => m.date === todayStr)) {
-            curFilterEl.value = todayStr;
-            if (mealFormDateEl && !mealFormDateEl.value) mealFormDateEl.value = todayStr;
-          } else if (!mealLogs.some(m => m.date === curFilterEl.value)) {
-            curFilterEl.value = mealLogs[0].date;
-            if (mealFormDateEl) mealFormDateEl.value = mealLogs[0].date;
-          }
+        if (data && Array.isArray(data.meals) && data.meals.length > 0) {
+          localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data));
+          applyHydratedData(data);
         }
-
-        populateMemberUI();
-        renderTrackerLists();
-        renderProfilesPage();
-        renderRoadmapPage();
-        if (currentPage === "analytics") renderAnalytics();
-        document.getElementById("syncStatusSub").textContent = "Synced • Google Sheets";
+        showTranslucentSyncModal(false);
+        setFloatingSyncPill(false);
+        const fn = localStorage.getItem("vitapulse_first_name");
+        const ln = localStorage.getItem("vitapulse_last_name");
+        document.getElementById("syncStatusSub").textContent = fn
+          ? `${[fn, ln].filter(Boolean).join(" ")} • Synced`
+          : "Synced • Google Sheets";
       } catch (err) {
-        console.error(err);
-        document.getElementById("syncStatusSub").textContent = "Offline / Check URL";
-        showToast("Sync failed — check connection");
+        clearTimeout(safetyTimer);
+        console.warn("Background sync fallback:", err);
+        showTranslucentSyncModal(false);
+        setFloatingSyncPill(false);
+        document.getElementById("syncStatusSub").textContent = hasCache ? "Cached • Offline" : "Offline / Ready";
       }
     }
 
@@ -1532,6 +1700,7 @@
     }
 
     function selectMember(name) {
+      hasSelectedMemberExplicitly = true;
       selectedMember = name;
       populateMemberUI();
       if (currentPage === "tracker") renderTrackerLists();
@@ -1539,31 +1708,57 @@
       if (currentPage === "roadmap") renderRoadmapPage();
     }
 
+    function isFatLossGoal(prof) {
+      if (!prof) return false;
+      const g = String(prof.goal || "").toLowerCase();
+      return /lean|fat loss|weight loss/i.test(g);
+    }
+
+    function computeBaselineBurn(prof) {
+      if (!prof) return { bmr: 1555, tdee: 1555, deficitTarget: 250 };
+      const w = Number(prof.weightKg) || 68;
+      const h = Number(prof.heightCm) || 165;
+      const a = Number(prof.age) || 30;
+      const g = prof.gender || "Male";
+      let calcBmr = 0;
+      if (a <= 3) {
+        calcBmr = g === "Male" ? (60.9 * w - 54) : (61.0 * w - 51);
+      } else if (a <= 10) {
+        calcBmr = g === "Male" ? (22.7 * w + 495) : (22.5 * w + 499);
+      } else {
+        const base = (10 * w) + (6.25 * h) - (5 * a);
+        calcBmr = g === "Male" ? (base + 5) : (base - 161);
+      }
+      calcBmr = Math.max(250, Math.round(calcBmr));
+      const bmr = Number(prof.bmr) > 0 ? Number(prof.bmr) : calcBmr;
+      const tdee = bmr;
+      const fatLoss = isFatLossGoal(prof);
+      const deficitTarget = fatLoss
+        ? (Number(prof.deficitTarget) > 0 ? Number(prof.deficitTarget) : 250)
+        : 0;
+      return { bmr, tdee, deficitTarget };
+    }
+
     function calculateBmiAndBodyFat(weightKg, heightCm, waistCm, age, gender) {
       const hMeters = heightCm / 100;
       const bmi = hMeters > 0 ? Number((weightKg / (hMeters * hMeters)).toFixed(1)) : 0;
-
       let bf = 0;
       if (bmi > 0 && age > 0) {
         const sexFactor = gender === "Male" ? 1 : 0;
         const bmiEst = (1.20 * bmi) + (0.23 * age) - (10.8 * sexFactor) - 5.4;
         if (waistCm > 0 && heightCm > 0) {
-          const waistEst = gender === "Male"
-            ? (64 - (20 * (heightCm / waistCm)))
-            : (76 - (20 * (heightCm / waistCm)));
+          const waistEst = gender === "Male" ? (64 - (20 * (heightCm / waistCm))) : (76 - (20 * (heightCm / waistCm)));
           bf = Number(((bmiEst + waistEst) / 2).toFixed(1));
         } else {
           bf = Number(bmiEst.toFixed(1));
         }
       }
       bf = Math.max(4, Math.min(60, bf));
-
       let tag = "Optimal";
       if (age < 18) tag = "Pediatric";
       else if (bmi < 18.5) tag = "Underweight";
       else if (bmi >= 25 && bmi < 30) tag = "Overweight";
       else if (bmi >= 30) tag = "Obese";
-
       return { bmi, bodyFatPct: bf, tag };
     }
 
@@ -1573,7 +1768,6 @@
       const waist = Number(document.getElementById("profWaistInput").value) || 0;
       const age = Number(document.getElementById("profAgeInput").value) || 30;
       const gender = document.getElementById("profGenderInput").value;
-
       if (w > 0 && h > 0) {
         const res = calculateBmiAndBodyFat(w, h, waist, age, gender);
         document.getElementById("calcBmiVal").textContent = res.bmi;
@@ -1586,32 +1780,26 @@
       }
     }
 
-    // ==================== 3-MONTH ROADMAP RENDERER ====================
     function renderRoadmapPage() {
       const container = document.getElementById("roadmapCardsContainer");
       const targetMembers = selectedMember === "All" ? profiles.map(p => p.name) : [selectedMember];
-
       if (!progressPlan || progressPlan.length === 0) {
         container.innerHTML = `<div class="studio-card rounded-3xl p-8 text-center text-xs text-zinc-400">Sync Google Sheet to load the 3-Month Progress Plan tab.</div>`;
         return;
       }
-
       container.innerHTML = targetMembers.map(memberName => {
         const rows = progressPlan.filter(r => r.member === memberName);
         if (rows.length === 0) return "";
         const prof = profiles.find(p => p.name === memberName) || {};
         const isPriorityKid = prof.age && prof.age <= 5;
         const borderClass = isPriorityKid ? "border-cyan-400/40" : "border-emerald-400/30";
-
         return `
           <section class="studio-card rounded-3xl p-5 border ${borderClass} space-y-4">
             <div class="flex items-start justify-between gap-2">
               <div>
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="font-serif-editorial font-bold text-white text-2xl">${memberName}</h3>
-                  <span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${isPriorityKid ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/30" : "bg-emerald-400/15 text-emerald-200 border border-emerald-400/30"}">
-                    ${prof.goal || "90-Day Plan"}
-                  </span>
+                  <span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${isPriorityKid ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/30" : "bg-emerald-400/15 text-emerald-200 border border-emerald-400/30"}">${prof.goal || "90-Day Plan"}</span>
                 </div>
                 <div class="text-xs text-zinc-400 mt-1">${rows[0].currentMetrics || ""}</div>
               </div>
@@ -1620,21 +1808,18 @@
                 <div class="text-[10px] text-cyan-300">${prof.proteinTarget || ""}g Protein</div>
               </div>
             </div>
-
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               ${rows.map(r => {
                 const isBaseline = r.phase.toLowerCase().includes("base");
-                return `
-                  <div class="rounded-2xl p-3.5 ${isBaseline ? "bg-white/[0.03] border border-white/10" : "bg-black/40 border border-emerald-400/20"} space-y-1.5">
-                    <div class="flex items-center justify-between">
-                      <span class="text-[10px] font-extrabold uppercase tracking-wider ${isBaseline ? "text-zinc-400" : "text-emerald-300"}">${r.phase} • ${r.timeline}</span>
-                      <span class="font-mono-num text-[11px] font-bold text-white">${r.targetWeightKg} kg</span>
-                    </div>
-                    <div class="font-mono-num text-[11px] text-cyan-300 font-bold">${r.targetMetric} • ${r.dailyCalories} kcal</div>
-                    <div class="font-mono-num text-[10px] text-zinc-400">${r.dailyMacros}</div>
-                    <p class="text-[11px] text-zinc-300 leading-relaxed pt-1 border-t border-white/5">${r.actionFocus}</p>
+                return `<div class="rounded-2xl p-3.5 ${isBaseline ? "bg-white/[0.03] border border-white/10" : "bg-black/40 border border-emerald-400/20"} space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider ${isBaseline ? "text-zinc-400" : "text-emerald-300"}">${r.phase} • ${r.timeline}</span>
+                    <span class="font-mono-num text-[11px] font-bold text-white">${r.targetWeightKg} kg</span>
                   </div>
-                `;
+                  <div class="font-mono-num text-[11px] text-cyan-300 font-bold">${r.targetMetric} • ${r.dailyCalories} kcal</div>
+                  <div class="font-mono-num text-[10px] text-zinc-400">${r.dailyMacros}</div>
+                  <p class="text-[11px] text-zinc-300 leading-relaxed pt-1 border-t border-white/5">${r.actionFocus}</p>
+                </div>`;
               }).join("")}
             </div>
           </section>
@@ -1642,7 +1827,6 @@
       }).join("");
     }
 
-    // ==================== PROFILES PAGE ====================
     function renderProfilesPage() {
       const grid = document.getElementById("profilesGrid");
       grid.innerHTML = profiles.map(p => {
@@ -1653,17 +1837,13 @@
           <div class="studio-card-mint rounded-3xl p-5 space-y-4">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3.5">
-                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br ${avatarStyle} font-serif-editorial font-bold text-2xl flex items-center justify-center shadow-md">
-                  ${p.name.charAt(0).toUpperCase()}
-                </div>
+                <div class="w-12 h-12 min-w-[3rem] min-h-[3rem] rounded-2xl bg-gradient-to-br ${avatarStyle} font-serif-editorial font-bold text-2xl flex items-center justify-center shadow-md flex-shrink-0">${p.name.charAt(0).toUpperCase()}</div>
                 <div>
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-bold text-white text-base">${p.name}</span>
                     <span class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-emerald-400/15 text-emerald-200 border border-emerald-400/25">${p.goal || "Lean & Fit"}</span>
                   </div>
-                  <div class="text-xs text-zinc-400 font-medium mt-1">
-                    ${p.gender} • <span class="font-mono-num">${p.age}y</span> • <span class="font-mono-num">${p.weightKg}kg → ${p.targetWeightKg}kg</span> • <span class="font-mono-num">${p.heightCm}cm</span> • Waist <span class="font-mono-num">${p.waistCm}cm</span>
-                  </div>
+                  <div class="text-xs text-zinc-400 font-medium mt-1">${p.gender} • <span class="font-mono-num">${p.age}y</span> • <span class="font-mono-num">${p.weightKg}kg → ${p.targetWeightKg}kg</span> • <span class="font-mono-num">${p.heightCm}cm</span> • Waist <span class="font-mono-num">${p.waistCm}cm</span></div>
                   ${p.conditions && p.conditions !== "None" ? `<div class="text-[11px] font-semibold text-amber-300 mt-1">⚕️ ${p.conditions}</div>` : ""}
                 </div>
               </div>
@@ -1672,32 +1852,13 @@
                 ${profiles.length > 1 ? `<button onclick="deleteProfile('${p.id}', '${p.name}')" class="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-[11px] font-bold text-rose-300">Del</button>` : ""}
               </div>
             </div>
-
             <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-3 border-t border-white/10 text-center">
-              <div class="bg-white/[0.03] rounded-xl p-2">
-                <div class="text-[9px] text-zinc-500 font-bold uppercase">BMI / BF%</div>
-                <div class="font-mono-num text-xs font-bold text-zinc-200 mt-0.5">${p.bmi || "—"} • ${p.bodyFatPct || "—"}%</div>
-              </div>
-              <div class="bg-emerald-400/10 rounded-xl p-2">
-                <div class="text-[9px] text-emerald-300 font-bold uppercase">Calories</div>
-                <div class="font-mono-num text-xs font-bold text-emerald-200 mt-0.5">${p.calTarget}</div>
-              </div>
-              <div class="bg-cyan-500/10 rounded-xl p-2">
-                <div class="text-[9px] text-cyan-300 font-bold uppercase">Protein</div>
-                <div class="font-mono-num text-xs font-bold text-cyan-200 mt-0.5">${p.proteinTarget}g</div>
-              </div>
-              <div class="bg-amber-400/10 rounded-xl p-2">
-                <div class="text-[9px] text-amber-300 font-bold uppercase">Carbs</div>
-                <div class="font-mono-num text-xs font-bold text-amber-200 mt-0.5">${p.carbsTarget || 200}g</div>
-              </div>
-              <div class="bg-rose-500/10 rounded-xl p-2">
-                <div class="text-[9px] text-rose-400 font-bold uppercase">Fats</div>
-                <div class="font-mono-num text-xs font-bold text-rose-300 mt-0.5">${p.fatsTarget || 55}g</div>
-              </div>
-              <div class="bg-violet-500/10 rounded-xl p-2">
-                <div class="text-[9px] text-violet-400 font-bold uppercase">Fiber</div>
-                <div class="font-mono-num text-xs font-bold text-violet-300 mt-0.5">${p.fiberTarget || 30}g</div>
-              </div>
+              <div class="bg-white/[0.03] rounded-xl p-2"><div class="text-[9px] text-zinc-500 font-bold uppercase">BMI / BF%</div><div class="font-mono-num text-xs font-bold text-zinc-200 mt-0.5">${p.bmi || "—"} • ${p.bodyFatPct || "—"}%</div></div>
+              <div class="bg-emerald-400/10 rounded-xl p-2"><div class="text-[9px] text-emerald-300 font-bold uppercase">Calories</div><div class="font-mono-num text-xs font-bold text-emerald-200 mt-0.5">${p.calTarget}</div></div>
+              <div class="bg-cyan-500/10 rounded-xl p-2"><div class="text-[9px] text-cyan-300 font-bold uppercase">Protein</div><div class="font-mono-num text-xs font-bold text-cyan-200 mt-0.5">${p.proteinTarget}g</div></div>
+              <div class="bg-amber-400/10 rounded-xl p-2"><div class="text-[9px] text-amber-300 font-bold uppercase">Carbs</div><div class="font-mono-num text-xs font-bold text-amber-200 mt-0.5">${p.carbsTarget || 200}g</div></div>
+              <div class="bg-rose-500/10 rounded-xl p-2"><div class="text-[9px] text-rose-400 font-bold uppercase">Fats</div><div class="font-mono-num text-xs font-bold text-rose-300 mt-0.5">${p.fatsTarget || 55}g</div></div>
+              <div class="bg-violet-500/10 rounded-xl p-2"><div class="text-[9px] text-violet-400 font-bold uppercase">Fiber</div><div class="font-mono-num text-xs font-bold text-violet-300 mt-0.5">${p.fiberTarget || 30}g</div></div>
             </div>
             ${p.aiPlanSummary ? `<p class="text-[11px] text-zinc-300 bg-black/40 border border-white/5 rounded-xl px-3.5 py-2.5 leading-relaxed">${p.aiPlanSummary}</p>` : ""}
           </div>
@@ -1766,13 +1927,10 @@
       const fatsTarget = Number(document.getElementById("profFatTargetInput").value) || 55;
       const fiberTarget = Number(document.getElementById("profFibTargetInput").value) || 30;
       const aiPlanSummary = document.getElementById("profPlanSummaryInput").value.trim();
-
       if (!name) return alert("Please enter a member name.");
       const metrics = calculateBmiAndBodyFat(weightKg, heightCm, waistCm, age, gender);
-
       closeModal("profileModal");
       showToast(id ? "Updating profile..." : "Saving new member...");
-
       const action = id ? "editProfile" : "addProfile";
       const res = await postToBackend({
         action, id, name, gender, age, weightKg, heightCm, waistCm,
@@ -1780,7 +1938,6 @@
         goal, conditions, targetWeightKg,
         calTarget, proteinTarget, carbsTarget, fatsTarget, fiberTarget, aiPlanSummary
       });
-
       if (res.status === "success") {
         profiles = res.profiles;
         populateMemberUI();
@@ -1803,119 +1960,45 @@
       }
     }
 
-    // ==================== MANUAL MEAL DETAILS (PENDING CHAT MACROS) ====================
     let manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
-
     function openQuickManualLogModal() {
       const formMember = document.getElementById("mealMemberSelect")?.value;
       const targetMem = selectedMember !== "All" ? selectedMember : (formMember || "");
-      if (targetMem) {
-        document.getElementById("manMealMember").value = targetMem;
-      }
+      if (targetMem) document.getElementById("manMealMember").value = targetMem;
       const formSlot = document.getElementById("mealTypeSelect")?.value;
-      if (formSlot) {
-        document.getElementById("manMealSlot").value = formSlot;
-      }
-      document.getElementById("manMealDate").value =
-        document.getElementById("mealDateInput")?.value ||
-        document.getElementById("trackerFilterDate").value ||
-        getLocalDateStr(0);
+      if (formSlot) document.getElementById("manMealSlot").value = formSlot;
+      document.getElementById("manMealDate").value = document.getElementById("mealDateInput")?.value || document.getElementById("trackerFilterDate").value || getLocalDateStr(0);
       manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
       renderManualDetailRows();
       document.getElementById("manNotes").value = "";
       document.getElementById("quickManualModal").classList.remove("hidden");
     }
-
-    function addManualDetailRow() {
-      manualDetailRows.push({ name: "", qty: "1", sizeVal: "" });
-      renderManualDetailRows();
-    }
-
-    function removeManualDetailRow(idx) {
-      manualDetailRows.splice(idx, 1);
-      if (manualDetailRows.length === 0) {
-        manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
-      }
-      renderManualDetailRows();
-    }
-
-    function updateManualDetailField(idx, field, val) {
-      if (manualDetailRows[idx]) {
-        manualDetailRows[idx][field] = val;
-      }
-    }
-
+    function addManualDetailRow() { manualDetailRows.push({ name: "", qty: "1", sizeVal: "" }); renderManualDetailRows(); }
+    function removeManualDetailRow(idx) { manualDetailRows.splice(idx, 1); if (!manualDetailRows.length) manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }]; renderManualDetailRows(); }
+    function updateManualDetailField(idx, field, val) { if (manualDetailRows[idx]) manualDetailRows[idx][field] = val; }
     function renderManualDetailRows() {
       const container = document.getElementById("manualDetailRowsContainer");
       container.innerHTML = manualDetailRows.map((row, idx) => `
         <div class="grid grid-cols-12 gap-2 items-center">
-          <div class="col-span-5">
-            <input type="text" value="${(row.name || "").replace(/"/g, "&quot;")}"
-              oninput="updateManualDetailField(${idx}, 'name', this.value)"
-              placeholder="e.g., Coffee"
-              class="studio-input w-full rounded-xl px-3 py-2 text-xs font-semibold" />
-          </div>
-          <div class="col-span-3">
-            <input type="number" step="0.5" min="0" value="${(row.qty || "").replace(/"/g, "&quot;")}"
-              oninput="updateManualDetailField(${idx}, 'qty', this.value)"
-              placeholder="1"
-              class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" />
-          </div>
-          <div class="col-span-3">
-            <input type="text" value="${(row.sizeVal || "").replace(/"/g, "&quot;")}"
-              oninput="updateManualDetailField(${idx}, 'sizeVal', this.value)"
-              placeholder="150 ml"
-              class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" />
-          </div>
-          <div class="col-span-1 flex justify-center">
-            <button type="button" onclick="removeManualDetailRow(${idx})"
-              class="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-bold">✕</button>
-          </div>
+          <div class="col-span-5"><input type="text" value="${(row.name || "").replace(/"/g, "&quot;")}" oninput="updateManualDetailField(${idx}, 'name', this.value)" placeholder="e.g., Coffee" class="studio-input w-full rounded-xl px-3 py-2 text-xs font-semibold" /></div>
+          <div class="col-span-3"><input type="number" step="0.5" min="0" value="${(row.qty || "").replace(/"/g, "&quot;")}" oninput="updateManualDetailField(${idx}, 'qty', this.value)" placeholder="1" class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" /></div>
+          <div class="col-span-3"><input type="text" value="${(row.sizeVal || "").replace(/"/g, "&quot;")}" oninput="updateManualDetailField(${idx}, 'sizeVal', this.value)" placeholder="150 ml" class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" /></div>
+          <div class="col-span-1 flex justify-center"><button type="button" onclick="removeManualDetailRow(${idx})" class="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-bold">✕</button></div>
         </div>
       `).join("");
     }
-
     async function saveQuickManualMeal() {
       const member = document.getElementById("manMealMember").value;
       const meal = document.getElementById("manMealSlot").value;
       const date = document.getElementById("manMealDate").value;
       const extraNotes = document.getElementById("manNotes").value.trim();
-
-      const validRows = manualDetailRows
-        .map(r => ({
-          name: String(r.name || "").trim(),
-          qty: Math.max(0.25, Number(r.qty) || 1),
-          sizeVal: String(r.sizeVal || "").trim()
-        }))
-        .filter(r => r.name.length > 0);
-
-      if (validRows.length === 0) {
-        return alert("Please enter at least one item description.");
-      }
-
-      const items = validRows.map(r => ({
-        name: r.name,
-        qty: r.qty,
-        unit_label: r.sizeVal ? `${r.sizeVal} (pending macros)` : "pending macros",
-        calories: 0,
-        protein: 0,
-        carbs: 0,
-        fats: 0,
-        fiber: 0
-      }));
-
-      const summaryParts = validRows.map(r => `${r.qty}x ${r.name}${r.sizeVal ? ` (${r.sizeVal})` : ""}`);
-      const notes = [summaryParts.join(", "), extraNotes, "[Pending chat macro calculation]"].filter(Boolean).join(" — ");
-
+      const validRows = manualDetailRows.map(r => ({ name: String(r.name || "").trim(), qty: Math.max(0.25, Number(r.qty) || 1), sizeVal: String(r.sizeVal || "").trim() })).filter(r => r.name.length > 0);
+      if (!validRows.length) return alert("Please enter at least one item description.");
+      const items = validRows.map(r => ({ name: r.name, qty: r.qty, unit_label: r.sizeVal ? `${r.sizeVal} (pending macros)` : "pending macros", calories: 0, protein: 0, carbs: 0, fats: 0, fiber: 0 }));
+      const notes = [validRows.map(r => `${r.qty}x ${r.name}${r.sizeVal ? ` (${r.sizeVal})` : ""}`).join(", "), extraNotes, "[Pending chat macro calculation]"].filter(Boolean).join(" — ");
       closeModal("quickManualModal");
       showToast("Saving meal details to Sheet...");
-
-      const res = await postToBackend({
-        action: "addManualMeal",
-        member, meal, date, notes,
-        items
-      });
-
+      const res = await postToBackend({ action: "addManualMeal", member, meal, date, notes, items });
       if (res.status === "success" && res.entry) {
         mealLogs.unshift(res.entry);
         document.getElementById("trackerFilterDate").value = date;
@@ -1928,157 +2011,81 @@
       }
     }
 
-    // ==================== EDIT / DUPLICATE / DELETE MEALS ====================
     function openEditMealModal(id) {
       const entry = mealLogs.find(m => m.id === id);
       if (!entry) return;
       document.getElementById("editMealId").value = entry.id;
       document.getElementById("editMealSlot").value = entry.meal;
       document.getElementById("editMealNotes").value = entry.notes || "";
-
       editingMealItemsState = (entry.items || []).map(it => {
         const q = Number(it.qty) > 0 ? Number(it.qty) : 1;
-        return {
-          name: it.name,
-          unit_label: it.unit_label || it.quantity || "serving",
-          qty: q,
-          unitCal: (Number(it.calories) || 0) / q,
-          unitPro: (Number(it.protein) || 0) / q,
-          unitCarb: (Number(it.carbs) || 0) / q,
-          unitFat: (Number(it.fats) || 0) / q,
-          unitFib: (Number(it.fiber) || 0) / q
-        };
+        return { name: it.name, unit_label: it.unit_label || it.quantity || "serving", qty: q, unitCal: (Number(it.calories) || 0) / q, unitPro: (Number(it.protein) || 0) / q, unitCarb: (Number(it.carbs) || 0) / q, unitFat: (Number(it.fats) || 0) / q, unitFib: (Number(it.fiber) || 0) / q };
       });
-
       renderEditMealItems();
       document.getElementById("editMealModal").classList.remove("hidden");
     }
-
     function renderEditMealItems() {
       const container = document.getElementById("editMealItemsContainer");
       let sumCal = 0, sumPro = 0;
-
       container.innerHTML = editingMealItemsState.map((it, idx) => {
         const curCal = Math.round(it.unitCal * it.qty);
         const curPro = (it.unitPro * it.qty).toFixed(1);
-        sumCal += curCal;
-        sumPro += Number(curPro);
-
-        return `
-          <div class="bg-white/[0.04] border border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="text-xs font-bold text-zinc-100 truncate">${it.name}</div>
-              <div class="text-[10px] text-zinc-400">${it.unit_label} • <span class="text-emerald-300 font-mono-num font-bold">${curCal} kcal</span> • ${curPro}g P</div>
-            </div>
-            <div class="flex items-center gap-1.5 flex-shrink-0">
-              <button type="button" onclick="stepItemQty(${idx}, -0.25)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold">−</button>
-              <input type="number" step="0.25" min="0" value="${it.qty}" onchange="setItemQty(${idx}, this.value)"
-                class="studio-input font-mono-num w-14 text-center text-xs font-bold rounded-lg py-1" />
-              <button type="button" onclick="stepItemQty(${idx}, 0.25)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold">+</button>
-            </div>
+        sumCal += curCal; sumPro += Number(curPro);
+        return `<div class="bg-white/[0.04] border border-white/10 rounded-2xl p-2.5 flex items-center justify-between gap-2">
+          <div class="min-w-0 flex-1"><div class="text-xs font-bold text-zinc-100 truncate">${it.name}</div><div class="text-[10px] text-zinc-400">${it.unit_label} • <span class="text-emerald-300 font-mono-num font-bold">${curCal} kcal</span> • ${curPro}g P</div></div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <button type="button" onclick="stepItemQty(${idx}, -0.25)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold">−</button>
+            <input type="number" step="0.25" min="0" value="${it.qty}" onchange="setItemQty(${idx}, this.value)" class="studio-input font-mono-num w-14 text-center text-xs font-bold rounded-lg py-1" />
+            <button type="button" onclick="stepItemQty(${idx}, 0.25)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold">+</button>
           </div>
-        `;
+        </div>`;
       }).join("");
-
       document.getElementById("editMealLiveTotals").textContent = `Total: ${sumCal} kcal • ${sumPro.toFixed(1)}g P`;
     }
-
-    function stepItemQty(idx, delta) {
-      editingMealItemsState[idx].qty = Math.max(0, Number((editingMealItemsState[idx].qty + delta).toFixed(2)));
-      renderEditMealItems();
-    }
-
-    function setItemQty(idx, val) {
-      editingMealItemsState[idx].qty = Math.max(0, Number(val) || 0);
-      renderEditMealItems();
-    }
-
+    function stepItemQty(idx, delta) { editingMealItemsState[idx].qty = Math.max(0, Number((editingMealItemsState[idx].qty + delta).toFixed(2))); renderEditMealItems(); }
+    function setItemQty(idx, val) { editingMealItemsState[idx].qty = Math.max(0, Number(val) || 0); renderEditMealItems(); }
     async function saveEditedMeal() {
       const id = document.getElementById("editMealId").value;
       const meal = document.getElementById("editMealSlot").value;
       const notes = document.getElementById("editMealNotes").value.trim();
-
-      const updatedItems = editingMealItemsState
-        .filter(it => it.qty > 0)
-        .map(it => ({
-          name: it.name,
-          qty: it.qty,
-          unit_label: it.unit_label,
-          calories: Math.round(it.unitCal * it.qty),
-          protein: Number((it.unitPro * it.qty).toFixed(1)),
-          carbs: Number((it.unitCarb * it.qty).toFixed(1)),
-          fats: Number((it.unitFat * it.qty).toFixed(1)),
-          fiber: Number((it.unitFib * it.qty).toFixed(1))
-        }));
-
+      const updatedItems = editingMealItemsState.filter(it => it.qty > 0).map(it => ({ name: it.name, qty: it.qty, unit_label: it.unit_label, calories: Math.round(it.unitCal * it.qty), protein: Number((it.unitPro * it.qty).toFixed(1)), carbs: Number((it.unitCarb * it.qty).toFixed(1)), fats: Number((it.unitFat * it.qty).toFixed(1)), fiber: Number((it.unitFib * it.qty).toFixed(1)) }));
       const btn = document.getElementById("saveMealEditBtn");
-      btn.disabled = true;
-      btn.textContent = "Saving...";
-
+      btn.disabled = true; btn.textContent = "Saving...";
       try {
-        const res = await postToBackend({
-          action: "editMeal", id, meal, notes, items: updatedItems
-        });
-        if (res.status === "success") {
-          mealLogs = res.meals;
-          closeModal("editMealModal");
-          renderTrackerLists();
-          showToast("Meal & macros updated!");
-        } else {
-          alert(res.message);
-        }
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Save Changes";
-      }
+        const res = await postToBackend({ action: "editMeal", id, meal, notes, items: updatedItems });
+        if (res.status === "success") { mealLogs = res.meals; closeModal("editMealModal"); renderTrackerLists(); showToast("Meal & macros updated!"); }
+        else alert(res.message);
+      } finally { btn.disabled = false; btn.textContent = "Save Changes"; }
     }
-
     function openDuplicateMealModal(id) {
       const entry = mealLogs.find(m => m.id === id);
       if (!entry) return;
       document.getElementById("dupSourceMealId").value = id;
       const others = profiles.filter(p => p.name !== entry.member);
       const listEl = document.getElementById("dupModalMemberList");
-      if (others.length === 0) {
-        listEl.innerHTML = `<div class="text-xs text-zinc-400">Add another family member in Profiles first.</div>`;
-      } else {
-        listEl.innerHTML = others.map(p => `
-          <label class="flex items-center justify-between p-3 rounded-2xl border border-white/10 bg-white/5 cursor-pointer">
-            <span class="text-xs font-bold text-zinc-100">${p.name} <span class="text-zinc-500 font-normal">(${p.age}y)</span></span>
-            <input type="checkbox" name="dupModalCheck" value="${p.name}" class="w-4 h-4 accent-emerald-400" />
-          </label>
-        `).join("");
-      }
+      listEl.innerHTML = others.length === 0 ? `<div class="text-xs text-zinc-400">Add another family member in Profiles first.</div>` : others.map(p => `
+        <label class="flex items-center justify-between p-3 rounded-2xl border border-white/10 bg-white/5 cursor-pointer">
+          <span class="text-xs font-bold text-zinc-100">${p.name} <span class="text-zinc-500 font-normal">(${p.age}y)</span></span>
+          <input type="checkbox" name="dupModalCheck" value="${p.name}" class="w-4 h-4 accent-emerald-400" />
+        </label>`).join("");
       document.getElementById("duplicateMealModal").classList.remove("hidden");
     }
-
     async function confirmDuplicateMeal() {
       const id = document.getElementById("dupSourceMealId").value;
       const targetMembers = Array.from(document.querySelectorAll('input[name="dupModalCheck"]:checked')).map(cb => cb.value);
-      if (targetMembers.length === 0) return alert("Select at least one family member.");
-
+      if (!targetMembers.length) return alert("Select at least one family member.");
       closeModal("duplicateMealModal");
       showToast("Duplicating meal...");
       const res = await postToBackend({ action: "duplicateMeal", id, targetMembers });
-      if (res.status === "success") {
-        mealLogs = res.meals;
-        renderTrackerLists();
-        showToast(`Duplicated for ${targetMembers.join(", ")}!`);
-      }
+      if (res.status === "success") { mealLogs = res.meals; renderTrackerLists(); showToast(`Duplicated for ${targetMembers.join(", ")}!`); }
     }
-
     async function deleteMealEntry(id) {
       if (!confirm("Delete this meal entry permanently from Google Sheets?")) return;
       showToast("Deleting meal...");
       const res = await postToBackend({ action: "deleteMeal", id });
-      if (res.status === "success") {
-        mealLogs = mealLogs.filter(m => m.id !== id);
-        renderTrackerLists();
-        showToast("Meal deleted");
-      }
+      if (res.status === "success") { mealLogs = mealLogs.filter(m => m.id !== id); renderTrackerLists(); showToast("Meal deleted"); }
     }
 
-    // ==================== FITNESS (LOCAL MET FORMULA — ZERO API) ====================
     function setFitnessCategory(cat) {
       selectedFitnessCat = cat;
       const btnCardio = document.getElementById("catBtnCardio");
@@ -2087,7 +2094,6 @@
       const metricLabel = document.getElementById("stepsOrSetsLabel");
       const metricInput = document.getElementById("fitMetricInput");
       const actSelect = document.getElementById("fitActivitySelect");
-
       if (cat === "Cardio") {
         btnCardio.className = "py-3 px-4 rounded-2xl border border-sky-400 bg-sky-500/15 text-sky-200 font-bold text-xs flex items-center justify-center gap-2 transition";
         btnStrength.className = "py-3 px-4 rounded-2xl border border-white/10 bg-white/5 text-zinc-400 font-bold text-xs flex items-center justify-center gap-2 transition";
@@ -2105,53 +2111,11 @@
       }
       autoEstimateBurn();
     }
-
     function renderBodyPartChips() {
-      const container = document.getElementById("bodyPartChips");
-      container.innerHTML = BODY_PARTS.map(bp => `
+      document.getElementById("bodyPartChips").innerHTML = BODY_PARTS.map(bp => `
         <button type="button" onclick="selectedBodyPart='${bp}'; renderBodyPartChips();"
-          class="px-3 py-1.5 rounded-xl text-[11px] font-bold transition ${
-            selectedBodyPart === bp
-              ? "bg-violet-500 text-white shadow-sm"
-              : "bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200"
-          }">
-          ${bp}
-        </button>
-      `).join("");
+          class="px-3 py-1.5 rounded-xl text-[11px] font-bold transition ${selectedBodyPart === bp ? "bg-violet-500 text-white shadow-sm" : "bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200"}">${bp}</button>`).join("");
     }
-
-    function isFatLossGoal(prof) {
-      if (!prof) return false;
-      const g = String(prof.goal || "").toLowerCase();
-      return /lean|fat loss|weight loss/i.test(g);
-    }
-
-    function computeBaselineBurn(prof) {
-      if (!prof) return { bmr: 1555, tdee: 1555, deficitTarget: 250 };
-      const w = Number(prof.weightKg) || 68;
-      const h = Number(prof.heightCm) || 165;
-      const a = Number(prof.age) || 30;
-      const g = prof.gender || "Male";
-      let calcBmr = 0;
-      if (a <= 3) {
-        calcBmr = g === "Male" ? (60.9 * w - 54) : (61.0 * w - 51);
-      } else if (a <= 10) {
-        calcBmr = g === "Male" ? (22.7 * w + 495) : (22.5 * w + 499);
-      } else {
-        const base = (10 * w) + (6.25 * h) - (5 * a);
-        calcBmr = g === "Male" ? (base + 5) : (base - 161);
-      }
-      calcBmr = Math.max(250, Math.round(calcBmr));
-      // Conservative 1.0x BMR baseline for everyone (no 1.2x multiplier)
-      const bmr = Number(prof.bmr) > 0 ? Number(prof.bmr) : calcBmr;
-      const tdee = bmr;
-      const fatLoss = isFatLossGoal(prof);
-      const deficitTarget = fatLoss
-        ? (Number(prof.deficitTarget) > 0 ? Number(prof.deficitTarget) : 250)
-        : 0;
-      return { bmr, tdee, deficitTarget };
-    }
-
     function autoEstimateBurn() {
       const memberName = document.getElementById("fitMemberSelect").value;
       const prof = profiles.find(p => p.name === memberName) || { weightKg: 68, heightCm: 165 };
@@ -2161,105 +2125,19 @@
       const dur = Number(document.getElementById("fitDurationInput").value) || 0;
       const metric = Number(document.getElementById("fitMetricInput").value) || 0;
       const act = document.getElementById("fitActivitySelect").value || "";
-
       const paceMult = pace === "casual" ? 0.85 : (pace === "vigorous" ? 1.22 : 1.0);
-      const metMap = {
-        "Brisk Walking": 4.3,
-        "Casual Walking": 3.0,
-        "Power Walking": 5.3,
-        "Running / Jogging": 8.3,
-        "Cycling": 6.8,
-        "Stationary Bike": 6.0,
-        "Swimming": 7.0,
-        "Treadmill / Elliptical": 6.0,
-        "HIIT Cardio": 8.5,
-        "Jump Rope / Skipping": 10.0,
-        "Stair Climbing": 7.5,
-        "Surya Namaskar": 5.5,
-        "Yoga / Mobility": 3.0,
-        "Weight Lifting": 5.0,
-        "Dumbbell Workout": 5.0,
-        "Squats (Bodyweight)": 5.5,
-        "Push-Ups": 4.5,
-        "Lunges": 5.0,
-        "Burpees": 8.5,
-        "Mountain Climbers": 8.0,
-        "Jumping Jacks": 7.5,
-        "Plank Hold": 3.5,
-        "Crunches / Sit-Ups": 4.0,
-        "Pull-Ups / Chin-Ups": 6.0,
-        "Calf Raises": 3.5,
-        "Shoulder Press": 4.8,
-        "Bench Press": 5.0,
-        "Lat Pulldown / Rows": 4.8,
-        "Bicep Curls": 3.8,
-        "Tricep Dips / Extensions": 4.0,
-        "Leg Press / Hamstrings": 5.2,
-        "Glute Bridges": 4.0,
-        "Resistance Bands": 4.0,
-        "Kettlebell Training": 6.5,
-        "CrossFit / Circuit": 8.0
-      };
-
-      // Per-rep kcal for 70kg scaled by weight (wt / 70)
-      const perRepKcalMap = {
-        "Squats (Bodyweight)": 0.48,
-        "Push-Ups": 0.42,
-        "Lunges": 0.50,
-        "Burpees": 1.10,
-        "Mountain Climbers": 0.45,
-        "Jumping Jacks": 0.35,
-        "Crunches / Sit-Ups": 0.30,
-        "Pull-Ups / Chin-Ups": 0.75,
-        "Calf Raises": 0.25,
-        "Shoulder Press": 0.45,
-        "Bench Press": 0.50,
-        "Lat Pulldown / Rows": 0.45,
-        "Bicep Curls": 0.28,
-        "Tricep Dips / Extensions": 0.30,
-        "Leg Press / Hamstrings": 0.55,
-        "Glute Bridges": 0.35,
-        "Surya Namaskar": 14.0
-      };
-
+      const metMap = { "Brisk Walking": 4.3, "Casual Walking": 3.0, "Power Walking": 5.3, "Running / Jogging": 8.3, "Cycling": 6.8, "Stationary Bike": 6.0, "Swimming": 7.0, "Treadmill / Elliptical": 6.0, "HIIT Cardio": 8.5, "Jump Rope / Skipping": 10.0, "Stair Climbing": 7.5, "Surya Namaskar": 5.5, "Yoga / Mobility": 3.0, "Weight Lifting": 5.0, "Dumbbell Workout": 5.0, "Squats (Bodyweight)": 5.5, "Push-Ups": 4.5, "Lunges": 5.0, "Burpees": 8.5, "Mountain Climbers": 8.0, "Jumping Jacks": 7.5, "Plank Hold": 3.5, "Crunches / Sit-Ups": 4.0, "Pull-Ups / Chin-Ups": 6.0, "Calf Raises": 3.5, "Shoulder Press": 4.8, "Bench Press": 5.0, "Lat Pulldown / Rows": 4.8, "Bicep Curls": 3.8, "Tricep Dips / Extensions": 4.0, "Leg Press / Hamstrings": 5.2, "Glute Bridges": 4.0, "Resistance Bands": 4.0, "Kettlebell Training": 6.5, "CrossFit / Circuit": 8.0 };
+      const perRepKcalMap = { "Squats (Bodyweight)": 0.48, "Push-Ups": 0.42, "Lunges": 0.50, "Burpees": 1.10, "Mountain Climbers": 0.45, "Jumping Jacks": 0.35, "Crunches / Sit-Ups": 0.30, "Pull-Ups / Chin-Ups": 0.75, "Calf Raises": 0.25, "Shoulder Press": 0.45, "Bench Press": 0.50, "Lat Pulldown / Rows": 0.45, "Bicep Curls": 0.28, "Tricep Dips / Extensions": 0.30, "Leg Press / Hamstrings": 0.55, "Glute Bridges": 0.35, "Surya Namaskar": 14.0 };
       const met = (metMap[act] || (selectedFitnessCat === "Cardio" ? 5.0 : 4.8)) * paceMult;
       let kcal = 0;
-
-      if (dur > 0) {
-        kcal = Math.round((met * 3.5 * wt / 200) * dur);
-      } else if (metric > 0) {
-        if (selectedFitnessCat === "Cardio") {
-          // Steps -> distance km using height stride factor * weight * pace
-          const strideKm = (ht * 0.415) / 100000;
-          const distKm = metric * strideKm;
-          kcal = Math.round(distKm * wt * 1.03 * paceMult);
-        } else if (perRepKcalMap[act]) {
-          kcal = Math.round(metric * perRepKcalMap[act] * (wt / 70) * paceMult);
-        } else {
-          // Assume sets (~2.5 min per set)
-          const estMin = metric * 2.5;
-          kcal = Math.round((met * 3.5 * wt / 200) * estMin);
-        }
+      if (dur > 0) kcal = Math.round((met * 3.5 * wt / 200) * dur);
+      else if (metric > 0) {
+        if (selectedFitnessCat === "Cardio") kcal = Math.round(metric * ((ht * 0.415) / 100000) * wt * 1.03 * paceMult);
+        else if (perRepKcalMap[act]) kcal = Math.round(metric * perRepKcalMap[act] * (wt / 70) * paceMult);
+        else kcal = Math.round((met * 3.5 * wt / 200) * (metric * 2.5));
       }
-
-      const hintEl = document.getElementById("burnFormulaHint");
-      if (hintEl) {
-        if (selectedFitnessCat === "Cardio" && metric > 0 && !dur) {
-          const strideKm = (ht * 0.415) / 100000;
-          const distKm = (metric * strideKm).toFixed(2);
-          hintEl.textContent = `${metric.toLocaleString()} steps ≈ ${distKm} km (${wt}kg, ${pace}) → ~${kcal} kcal`;
-        } else if (perRepKcalMap[act] && metric > 0 && !dur) {
-          hintEl.textContent = `${metric} reps of ${act} (${wt}kg, ${pace}) → ~${kcal} kcal`;
-        } else {
-          hintEl.textContent = `Weight: ${wt}kg • Pace: ${pace} • Est. Burn: ${kcal} kcal`;
-        }
-      }
-
-      if (kcal > 0) {
-        document.getElementById("fitCaloriesInput").value = kcal;
-      }
+      if (kcal > 0) document.getElementById("fitCaloriesInput").value = kcal;
     }
-
     async function submitFitness() {
       const member = document.getElementById("fitMemberSelect").value;
       const date = document.getElementById("fitDateInput").value;
@@ -2269,128 +2147,54 @@
       const caloriesBurned = Number(document.getElementById("fitCaloriesInput").value) || 0;
       const notes = document.getElementById("fitNotesInput").value.trim();
       const bodyPart = selectedFitnessCat === "Strength Training" ? selectedBodyPart : "";
-
-      if (!durationMin && !stepsOrVolume) {
-        return alert("Please enter duration (minutes) or steps.");
-      }
-
+      if (!durationMin && !stepsOrVolume) return alert("Please enter duration (minutes) or steps.");
       const btn = document.getElementById("submitFitBtn");
-      btn.disabled = true;
-      btn.textContent = "Saving Workout...";
-
+      btn.disabled = true; btn.textContent = "Saving Workout...";
       try {
-        const res = await postToBackend({
-          action: "addFitness", member, date, category: selectedFitnessCat,
-          activity, bodyPart, durationMin, stepsOrVolume, caloriesBurned, notes
-        });
+        const res = await postToBackend({ action: "addFitness", member, date, category: selectedFitnessCat, activity, bodyPart, durationMin, stepsOrVolume, caloriesBurned, notes });
         if (res.status === "success") {
           fitnessLogs.unshift(res.entry);
-          document.getElementById("fitDurationInput").value = "";
-          document.getElementById("fitMetricInput").value = "";
-          document.getElementById("fitCaloriesInput").value = "";
-          document.getElementById("fitNotesInput").value = "";
-          renderTrackerLists();
-          showToast(`Workout saved! (${res.entry.caloriesBurned} kcal)`);
-        } else {
-          alert(res.message);
-        }
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Save Workout Entry";
-      }
+          document.getElementById("fitDurationInput").value = ""; document.getElementById("fitMetricInput").value = ""; document.getElementById("fitCaloriesInput").value = ""; document.getElementById("fitNotesInput").value = "";
+          renderTrackerLists(); showToast(`Workout saved! (${res.entry.caloriesBurned} kcal)`);
+        } else alert(res.message);
+      } finally { btn.disabled = false; btn.textContent = "Save Workout Entry"; }
     }
-
     function openEditFitnessModal(id) {
       const f = fitnessLogs.find(x => x.id === id);
       if (!f) return;
-      document.getElementById("editFitId").value = f.id;
-      document.getElementById("editFitCat").value = f.category;
-      document.getElementById("editFitAct").value = f.activity;
-      document.getElementById("editFitDur").value = f.durationMin;
-      document.getElementById("editFitSteps").value = f.stepsOrVolume;
-      document.getElementById("editFitBurn").value = f.caloriesBurned;
-      document.getElementById("editFitBody").value = f.bodyPart || "";
-      document.getElementById("editFitNotes").value = f.notes || "";
+      document.getElementById("editFitId").value = f.id; document.getElementById("editFitCat").value = f.category; document.getElementById("editFitAct").value = f.activity; document.getElementById("editFitDur").value = f.durationMin; document.getElementById("editFitSteps").value = f.stepsOrVolume; document.getElementById("editFitBurn").value = f.caloriesBurned; document.getElementById("editFitBody").value = f.bodyPart || ""; document.getElementById("editFitNotes").value = f.notes || "";
       document.getElementById("editFitnessModal").classList.remove("hidden");
     }
-
     async function saveEditedFitness() {
       const id = document.getElementById("editFitId").value;
-      const payload = {
-        action: "editFitness", id,
-        category: document.getElementById("editFitCat").value,
-        activity: document.getElementById("editFitAct").value.trim(),
-        durationMin: Number(document.getElementById("editFitDur").value) || 0,
-        stepsOrVolume: Number(document.getElementById("editFitSteps").value) || 0,
-        caloriesBurned: Number(document.getElementById("editFitBurn").value) || 0,
-        bodyPart: document.getElementById("editFitBody").value.trim(),
-        notes: document.getElementById("editFitNotes").value.trim()
-      };
-      closeModal("editFitnessModal");
-      showToast("Updating workout...");
+      const payload = { action: "editFitness", id, category: document.getElementById("editFitCat").value, activity: document.getElementById("editFitAct").value.trim(), durationMin: Number(document.getElementById("editFitDur").value) || 0, stepsOrVolume: Number(document.getElementById("editFitSteps").value) || 0, caloriesBurned: Number(document.getElementById("editFitBurn").value) || 0, bodyPart: document.getElementById("editFitBody").value.trim(), notes: document.getElementById("editFitNotes").value.trim() };
+      closeModal("editFitnessModal"); showToast("Updating workout...");
       const res = await postToBackend(payload);
-      if (res.status === "success") {
-        fitnessLogs = res.fitness;
-        renderTrackerLists();
-        showToast("Workout updated!");
-      }
+      if (res.status === "success") { fitnessLogs = res.fitness; renderTrackerLists(); showToast("Workout updated!"); }
     }
-
     async function deleteFitnessEntry(id) {
       if (!confirm("Delete this workout entry from Google Sheets?")) return;
       showToast("Deleting workout...");
       const res = await postToBackend({ action: "deleteFitness", id });
-      if (res.status === "success") {
-        fitnessLogs = fitnessLogs.filter(f => f.id !== id);
-        renderTrackerLists();
-        showToast("Workout deleted");
-      }
+      if (res.status === "success") { fitnessLogs = fitnessLogs.filter(f => f.id !== id); renderTrackerLists(); showToast("Workout deleted"); }
     }
 
     let pressTimer = null;
-    function startLongPress(type, id, title) {
-      clearTimeout(pressTimer);
-      pressTimer = setTimeout(() => {
-        if (navigator.vibrate) navigator.vibrate(35);
-        openActionSheet(type, id, title);
-      }, 550);
-    }
+    function startLongPress(type, id, title) { clearTimeout(pressTimer); pressTimer = setTimeout(() => { if (navigator.vibrate) navigator.vibrate(35); openActionSheet(type, id, title); }, 550); }
     function cancelLongPress() { clearTimeout(pressTimer); }
-
     function openActionSheet(type, id, title) {
       document.getElementById("actionSheetTitle").textContent = title;
-      document.getElementById("actionSheetSub").textContent = type === "meal"
-        ? "Edit quantities, duplicate for family, or delete"
-        : "Edit workout or delete entry";
-
+      document.getElementById("actionSheetSub").textContent = type === "meal" ? "Edit quantities, duplicate for family, or delete" : "Edit workout or delete entry";
       const dupBtn = document.getElementById("actionDupBtn");
       const photoBtn = document.getElementById("actionPhotoBtn");
       dupBtn.classList.toggle("hidden", type !== "meal");
       if (photoBtn) photoBtn.classList.toggle("hidden", type !== "meal");
-
-      document.getElementById("actionEditBtn").onclick = () => {
-        closeModal("actionSheetModal");
-        if (type === "meal") openEditMealModal(id);
-        else openEditFitnessModal(id);
-      };
-      if (photoBtn) {
-        photoBtn.onclick = () => {
-          closeModal("actionSheetModal");
-          openAddPhotoModal(id);
-        };
-      }
-      dupBtn.onclick = () => {
-        closeModal("actionSheetModal");
-        openDuplicateMealModal(id);
-      };
-      document.getElementById("actionDeleteBtn").onclick = () => {
-        closeModal("actionSheetModal");
-        if (type === "meal") deleteMealEntry(id);
-        else deleteFitnessEntry(id);
-      };
+      document.getElementById("actionEditBtn").onclick = () => { closeModal("actionSheetModal"); if (type === "meal") openEditMealModal(id); else openEditFitnessModal(id); };
+      if (photoBtn) photoBtn.onclick = () => { closeModal("actionSheetModal"); openAddPhotoModal(id); };
+      dupBtn.onclick = () => { closeModal("actionSheetModal"); openDuplicateMealModal(id); };
+      document.getElementById("actionDeleteBtn").onclick = () => { closeModal("actionSheetModal"); if (type === "meal") deleteMealEntry(id); else deleteFitnessEntry(id); };
       document.getElementById("actionSheetModal").classList.remove("hidden");
     }
-
     function closeModal(id) { document.getElementById(id).classList.add("hidden"); }
 
     function parsePhotoUrls(raw) {
@@ -2398,48 +2202,20 @@
       if (Array.isArray(raw)) return raw.filter(Boolean);
       const s = String(raw).trim();
       if (!s) return [];
-      if (s.startsWith("[")) {
-        try {
-          const arr = JSON.parse(s);
-          if (Array.isArray(arr)) return arr.map(u => String(u).trim()).filter(Boolean);
-        } catch (e) {}
-      }
+      if (s.startsWith("[")) { try { const arr = JSON.parse(s); if (Array.isArray(arr)) return arr.map(u => String(u).trim()).filter(Boolean); } catch (e) {} }
       return s.split(/\s*[|,]\s*/).map(u => u.trim()).filter(Boolean);
     }
-
     function renderPhotoDeckHtml(log) {
       const urls = parsePhotoUrls(log.photoUrl);
-      if (urls.length === 0) return "";
+      if (!urls.length) return "";
       const visible = urls.slice(0, 3);
-      const cardsHtml = visible.map((url, idx) => `
-        <img src="${url}" alt="${log.meal} ${idx + 1}" class="photo-deck-card layer-${idx}" />
-      `).join("");
-      const badgeHtml = urls.length > 1
-        ? `<span class="absolute -bottom-1 -right-1 z-40 font-mono-num text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-400 text-zinc-950 shadow-md border border-zinc-950">+${urls.length - 1}</span>`
-        : "";
-      return `
-        <div onclick="event.stopPropagation(); openPhotoLightbox('${log.id}', 0)"
-             onmousedown="event.stopPropagation()"
-             ontouchstart="event.stopPropagation()"
-             title="Tap to view ${urls.length} food picture${urls.length > 1 ? "s" : ""}"
-             class="photo-deck">
-          ${cardsHtml}
-          ${badgeHtml}
-        </div>
-      `;
+      const cardsHtml = visible.map((url, idx) => `<img src="${url}" alt="${log.meal} ${idx + 1}" class="photo-deck-card layer-${idx}" />`).join("");
+      const badgeHtml = urls.length > 1 ? `<span class="absolute -bottom-1 -right-1 z-40 font-mono-num text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-400 text-zinc-950 shadow-md border border-zinc-950">+${urls.length - 1}</span>` : "";
+      return `<div onclick="event.stopPropagation(); openPhotoLightbox('${log.id}', 0)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" class="photo-deck">${cardsHtml}${badgeHtml}</div>`;
     }
 
-    let pendingCompressedImages = [];
-    let lightboxPhotos = [];
-    let lightboxIndex = 0;
-    let lightboxMealId = "";
-
-    function estimateBase64Bytes(base64Str) {
-      if (!base64Str) return 0;
-      const clean = base64Str.replace(/=+$/, "");
-      return Math.floor((clean.length * 3) / 4);
-    }
-
+    let pendingCompressedImages = [], lightboxPhotos = [], lightboxIndex = 0, lightboxMealId = "";
+    function estimateBase64Bytes(b64) { if (!b64) return 0; return Math.floor((b64.replace(/=+$/, "").length * 3) / 4); }
     function compressImageToBase64(file, targetMinKb = 48, targetMaxKb = 60) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -2448,264 +2224,102 @@
           img.onload = () => {
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
-            const maxTargetBytes = targetMaxKb * 1024;
-            const minTargetBytes = targetMinKb * 1024;
-
-            let bestDataUrl = "";
-            let bestBase64 = "";
-            let bestKb = 0;
-
-            const dimSteps = [640, 520, 420, 340];
-            for (let dIdx = 0; dIdx < dimSteps.length; dIdx++) {
-              const maxDim = dimSteps[dIdx];
-              let w = img.width;
-              let h = img.height;
-              if (w > maxDim || h > maxDim) {
-                if (w > h) {
-                  h = Math.max(1, Math.round((h * maxDim) / w));
-                  w = maxDim;
-                } else {
-                  w = Math.max(1, Math.round((w * maxDim) / h));
-                  h = maxDim;
-                }
-              }
-              canvas.width = w;
-              canvas.height = h;
-              ctx.clearRect(0, 0, w, h);
-              ctx.drawImage(img, 0, 0, w, h);
-
+            let bestDataUrl = "", bestBase64 = "", bestKb = 0;
+            for (const maxDim of [640, 520, 420, 340]) {
+              let w = img.width, h = img.height;
+              if (w > maxDim || h > maxDim) { if (w > h) { h = Math.max(1, Math.round((h * maxDim) / w)); w = maxDim; } else { w = Math.max(1, Math.round((w * maxDim) / h)); h = maxDim; } }
+              canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
               for (let q = 0.78; q >= 0.30; q -= 0.08) {
-                const quality = Number(q.toFixed(2));
-                const dataUrl = canvas.toDataURL("image/jpeg", quality);
+                const dataUrl = canvas.toDataURL("image/jpeg", Number(q.toFixed(2)));
                 const b64 = dataUrl.split(",")[1] || "";
                 const kb = Math.round(estimateBase64Bytes(b64) / 1024);
-
-                if (!bestDataUrl || Math.abs(kb - 55) < Math.abs(bestKb - 55)) {
-                  bestDataUrl = dataUrl;
-                  bestBase64 = b64;
-                  bestKb = kb;
-                }
-
-                if (kb >= targetMinKb && kb <= targetMaxKb) {
-                  resolve({
-                    dataUrl,
-                    base64: b64,
-                    mimeType: "image/jpeg",
-                    sizeKb: kb
-                  });
-                  return;
-                }
-              }
-
-              if (bestKb <= maxTargetBytes / 1024 && bestKb >= minTargetBytes / 1024) {
-                break;
+                if (!bestDataUrl || Math.abs(kb - 55) < Math.abs(bestKb - 55)) { bestDataUrl = dataUrl; bestBase64 = b64; bestKb = kb; }
+                if (kb >= targetMinKb && kb <= targetMaxKb) { resolve({ dataUrl, base64: b64, mimeType: "image/jpeg", sizeKb: kb }); return; }
               }
             }
-
-            resolve({
-              dataUrl: bestDataUrl,
-              base64: bestBase64,
-              mimeType: "image/jpeg",
-              sizeKb: bestKb
-            });
+            resolve({ dataUrl: bestDataUrl, base64: bestBase64, mimeType: "image/jpeg", sizeKb: bestKb });
           };
-          img.onerror = reject;
-          img.src = ev.target.result;
+          img.onerror = reject; img.src = ev.target.result;
         };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
+        reader.onerror = reject; reader.readAsDataURL(file);
       });
     }
-
     function openAddPhotoModal(mealId) {
-      const entry = mealLogs.find(m => m.id === mealId);
-      if (!entry) return;
+      const entry = mealLogs.find(m => m.id === mealId); if (!entry) return;
       document.getElementById("photoTargetMealId").value = mealId;
       document.getElementById("addPhotoSub").textContent = `${entry.member} • ${entry.meal} (${entry.date}) — Select one or multiple photos to stack as cards.`;
-      document.getElementById("mealMultiPhotoInput").value = "";
-      pendingCompressedImages = [];
-
-      const newGrid = document.getElementById("selectedNewPhotosGrid");
-      newGrid.innerHTML = "";
-      newGrid.classList.add("hidden");
-
+      document.getElementById("mealMultiPhotoInput").value = ""; pendingCompressedImages = [];
+      document.getElementById("selectedNewPhotosGrid").innerHTML = ""; document.getElementById("selectedNewPhotosGrid").classList.add("hidden");
       const existing = parsePhotoUrls(entry.photoUrl);
-      const exWrap = document.getElementById("existingPhotosPreview");
-      const exGrid = document.getElementById("existingPhotosGrid");
-      if (existing.length > 0) {
-        exWrap.classList.remove("hidden");
-        exGrid.innerHTML = existing.map((u, i) => `
-          <div class="relative w-16 h-16 flex-shrink-0">
-            <img src="${u}" class="w-16 h-16 rounded-xl object-cover border border-white/15" />
-            <button type="button" onclick="removeSingleSavedPhoto('${mealId}', ${i})"
-              class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow">✕</button>
-          </div>
-        `).join("");
-      } else {
-        exWrap.classList.add("hidden");
-        exGrid.innerHTML = "";
-      }
-
+      const exWrap = document.getElementById("existingPhotosPreview"), exGrid = document.getElementById("existingPhotosGrid");
+      if (existing.length) { exWrap.classList.remove("hidden"); exGrid.innerHTML = existing.map((u, i) => `<div class="relative w-16 h-16 flex-shrink-0"><img src="${u}" class="w-16 h-16 rounded-xl object-cover border border-white/15" /><button type="button" onclick="removeSingleSavedPhoto('${mealId}', ${i})" class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow">✕</button></div>`).join(""); }
+      else { exWrap.classList.add("hidden"); exGrid.innerHTML = ""; }
       document.getElementById("addPhotoModal").classList.remove("hidden");
     }
-
     async function handleMultiPhotoSelect(event) {
-      const files = Array.from(event.target.files || []);
-      if (files.length === 0) return;
-      showToast(`Compressing to ~55 KB...`);
-      pendingCompressedImages = [];
-      for (const f of files) {
-        const comp = await compressImageToBase64(f, 48, 60);
-        pendingCompressedImages.push(comp);
-      }
-      const grid = document.getElementById("selectedNewPhotosGrid");
-      grid.classList.remove("hidden");
-      grid.innerHTML = pendingCompressedImages.map((imgObj, idx) => `
-        <div class="relative aspect-square rounded-2xl overflow-hidden border border-cyan-400/35 bg-black/40">
-          <img src="${imgObj.dataUrl}" class="w-full h-full object-cover" />
-          <span class="absolute bottom-1 left-1 font-mono-num text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/75 text-cyan-200">#${idx + 1} • ${imgObj.sizeKb || 55}KB</span>
-        </div>
-      `).join("");
+      const files = Array.from(event.target.files || []); if (!files.length) return;
+      showToast("Compressing to ~55 KB..."); pendingCompressedImages = [];
+      for (const f of files) pendingCompressedImages.push(await compressImageToBase64(f, 48, 60));
+      const grid = document.getElementById("selectedNewPhotosGrid"); grid.classList.remove("hidden");
+      grid.innerHTML = pendingCompressedImages.map((imgObj, idx) => `<div class="relative aspect-square rounded-2xl overflow-hidden border border-cyan-400/35 bg-black/40"><img src="${imgObj.dataUrl}" class="w-full h-full object-cover" /><span class="absolute bottom-1 left-1 font-mono-num text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/75 text-cyan-200">#${idx + 1} • ${imgObj.sizeKb || 55}KB</span></div>`).join("");
     }
-
     async function saveSelectedMealPhotos() {
-      const mealId = document.getElementById("photoTargetMealId").value;
-      if (!mealId) return;
-      if (pendingCompressedImages.length === 0) {
-        return alert("Please select at least one food picture first.");
-      }
-
-      const btn = document.getElementById("saveMealPhotosBtn");
-      btn.disabled = true;
-      btn.textContent = "Uploading to Drive...";
-
+      const mealId = document.getElementById("photoTargetMealId").value; if (!mealId || !pendingCompressedImages.length) return alert("Please select at least one food picture first.");
+      const btn = document.getElementById("saveMealPhotosBtn"); btn.disabled = true; btn.textContent = "Uploading to Drive...";
       try {
-        const res = await postToBackend({
-          action: "attachMealPhotos",
-          id: mealId,
-          images: pendingCompressedImages.map(im => ({
-            base64: im.base64,
-            mimeType: im.mimeType
-          }))
-        });
-        if (res.status === "success") {
-          mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
-          closeModal("addPhotoModal");
-          renderTrackerLists();
-          showToast(`Saved ${pendingCompressedImages.length} food picture${pendingCompressedImages.length > 1 ? "s" : ""}!`);
-        } else {
-          alert("Upload error: " + (res.message || "Could not save photos"));
-        }
-      } catch (err) {
-        console.error(err);
-        alert("Network error uploading photos. Please check your Apps Script deployment.");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Save Pictures";
-      }
+        const res = await postToBackend({ action: "attachMealPhotos", id: mealId, images: pendingCompressedImages.map(im => ({ base64: im.base64, mimeType: im.mimeType })) });
+        if (res.status === "success") { mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) })); closeModal("addPhotoModal"); renderTrackerLists(); showToast(`Saved ${pendingCompressedImages.length} food picture(s)!`); }
+        else alert("Upload error: " + (res.message || "Could not save photos"));
+      } finally { btn.disabled = false; btn.textContent = "Save Pictures"; }
     }
-
     async function removeSingleSavedPhoto(mealId, photoIdx) {
-      const entry = mealLogs.find(m => m.id === mealId);
-      if (!entry) return;
-      const urls = parsePhotoUrls(entry.photoUrl);
-      urls.splice(photoIdx, 1);
-      showToast("Updating photos...");
-      const res = await postToBackend({
-        action: "updateMealPhotoUrls",
-        id: mealId,
-        photoUrls: urls
-      });
-      if (res.status === "success") {
-        mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
-        openAddPhotoModal(mealId);
-        renderTrackerLists();
-        showToast("Photo removed");
-      }
+      const entry = mealLogs.find(m => m.id === mealId); if (!entry) return;
+      const urls = parsePhotoUrls(entry.photoUrl); urls.splice(photoIdx, 1);
+      const res = await postToBackend({ action: "updateMealPhotoUrls", id: mealId, photoUrls: urls });
+      if (res.status === "success") { mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) })); openAddPhotoModal(mealId); renderTrackerLists(); showToast("Photo removed"); }
     }
-
     async function clearSavedMealPhotos() {
-      const mealId = document.getElementById("photoTargetMealId").value;
-      if (!mealId || !confirm("Remove all saved food pictures from this meal?")) return;
-      showToast("Clearing photos...");
-      const res = await postToBackend({
-        action: "updateMealPhotoUrls",
-        id: mealId,
-        photoUrls: []
-      });
-      if (res.status === "success") {
-        mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
-        closeModal("addPhotoModal");
-        renderTrackerLists();
-        showToast("All pictures removed");
-      }
+      const mealId = document.getElementById("photoTargetMealId").value; if (!mealId || !confirm("Remove all saved food pictures from this meal?")) return;
+      const res = await postToBackend({ action: "updateMealPhotoUrls", id: mealId, photoUrls: [] });
+      if (res.status === "success") { mealLogs = (res.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) })); closeModal("addPhotoModal"); renderTrackerLists(); showToast("All pictures removed"); }
     }
-
     function openPhotoLightbox(mealId, startIdx = 0) {
-      const entry = mealLogs.find(m => m.id === mealId);
-      if (!entry) return;
-      const urls = parsePhotoUrls(entry.photoUrl);
-      if (urls.length === 0) return;
-
-      lightboxMealId = mealId;
-      lightboxPhotos = urls;
-      lightboxIndex = Math.max(0, Math.min(urls.length - 1, startIdx));
+      const entry = mealLogs.find(m => m.id === mealId); if (!entry) return;
+      const urls = parsePhotoUrls(entry.photoUrl); if (!urls.length) return;
+      lightboxMealId = mealId; lightboxPhotos = urls; lightboxIndex = Math.max(0, Math.min(urls.length - 1, startIdx));
       document.getElementById("lightboxTitle").textContent = `${entry.member} • ${entry.meal} (${entry.date})`;
-      document.getElementById("lightboxAddMoreBtn").onclick = () => {
-        closeModal("photoLightboxModal");
-        openAddPhotoModal(mealId);
-      };
-      renderLightboxView();
-      document.getElementById("photoLightboxModal").classList.remove("hidden");
+      document.getElementById("lightboxAddMoreBtn").onclick = () => { closeModal("photoLightboxModal"); openAddPhotoModal(mealId); };
+      renderLightboxView(); document.getElementById("photoLightboxModal").classList.remove("hidden");
     }
-
-    function stepLightbox(delta) {
-      if (lightboxPhotos.length === 0) return;
-      lightboxIndex = (lightboxIndex + delta + lightboxPhotos.length) % lightboxPhotos.length;
-      renderLightboxView();
-    }
-
+    function stepLightbox(delta) { if (!lightboxPhotos.length) return; lightboxIndex = (lightboxIndex + delta + lightboxPhotos.length) % lightboxPhotos.length; renderLightboxView(); }
     function renderLightboxView() {
       document.getElementById("lightboxMainImg").src = lightboxPhotos[lightboxIndex];
       document.getElementById("lightboxCounter").textContent = `Picture ${lightboxIndex + 1} of ${lightboxPhotos.length}`;
-      const strip = document.getElementById("lightboxThumbStrip");
-      strip.innerHTML = lightboxPhotos.map((u, i) => `
-        <img src="${u}" onclick="lightboxIndex=${i}; renderLightboxView();"
-          class="w-12 h-12 rounded-xl object-cover cursor-pointer border-2 transition ${
-            i === lightboxIndex ? "border-emerald-400 scale-105" : "border-white/15 opacity-60 hover:opacity-100"
-          }" />
-      `).join("");
+      document.getElementById("lightboxThumbStrip").innerHTML = lightboxPhotos.map((u, i) => `<img src="${u}" onclick="lightboxIndex=${i}; renderLightboxView();" class="w-12 h-12 rounded-xl object-cover cursor-pointer border-2 transition ${i === lightboxIndex ? "border-emerald-400 scale-105" : "border-white/15 opacity-60 hover:opacity-100"}" />`).join("");
     }
 
     function renderTrackerLists() {
       const preset = document.getElementById("mealDatePresetSelect")?.value || "selected";
       const filterDate = document.getElementById("trackerFilterDate").value;
       const applyDateFilter = preset === "selected" && Boolean(filterDate);
-
       const summaryEl = document.getElementById("mealLogFilterSummary");
-      if (summaryEl) {
-        const whoText = selectedMember === "All" ? "All Members" : selectedMember;
-        const whenText = applyDateFilter ? filterDate : "All Dates";
-        summaryEl.textContent = `${whoText} • ${whenText} — Tap ⋮ or long-press a card to edit or duplicate`;
-      }
+      if (summaryEl) summaryEl.textContent = `${selectedMember === "All" ? "All Members" : selectedMember} • ${applyDateFilter ? filterDate : "All Dates"} — Tap ⋮ or long-press a card to edit or duplicate`;
 
       const targetNormDate = normalizeDateStr(filterDate);
       const filteredMeals = mealLogs.filter(m =>
-        (selectedMember === "All" || m.member === selectedMember) &&
+        (selectedMember === "All" || String(m.member || "").toLowerCase() === String(selectedMember || "").toLowerCase()) &&
         (!applyDateFilter || normalizeDateStr(m.date) === targetNormDate)
       );
 
       let cal = 0, pro = 0, carb = 0, fat = 0, fib = 0;
-      filteredMeals.forEach(m => {
-        cal += m.calories; pro += m.protein; carb += m.carbs; fat += m.fats; fib += m.fiber;
-      });
+      filteredMeals.forEach(m => { cal += Number(m.calories) || 0; pro += Number(m.protein) || 0; carb += Number(m.carbs) || 0; fat += Number(m.fats) || 0; fib += Number(m.fiber) || 0; });
       document.getElementById("snapCal").textContent = Math.round(cal).toLocaleString();
       document.getElementById("snapPro").textContent = pro.toFixed(1) + "g";
       document.getElementById("snapCarb").textContent = carb.toFixed(1) + "g";
       document.getElementById("snapFat").textContent = fat.toFixed(1) + "g";
       document.getElementById("snapFib").textContent = fib.toFixed(1) + "g";
 
-      const prof = profiles.find(p => p.name === selectedMember);
+      const prof = profiles.find(p => String(p.name || "").toLowerCase() === String(selectedMember || "").toLowerCase());
       document.getElementById("snapCalTarget").textContent = prof ? `/ ${prof.calTarget}` : "";
       document.getElementById("snapProTarget").textContent = prof ? `/ ${prof.proteinTarget}g` : "";
       document.getElementById("snapCarbTarget").textContent = prof ? `/ ${prof.carbsTarget || 185}g` : "";
@@ -2713,116 +2327,72 @@
       document.getElementById("snapFibTarget").textContent = prof ? `/ ${prof.fiberTarget || 30}g` : "";
 
       const filteredFitForDate = fitnessLogs.filter(f =>
-        (selectedMember === "All" || f.member === selectedMember) &&
+        (selectedMember === "All" || String(f.member || "").toLowerCase() === String(selectedMember || "").toLowerCase()) &&
         (!applyDateFilter || normalizeDateStr(f.date) === targetNormDate)
       );
       const dayExerciseBurn = filteredFitForDate.reduce((s, f) => s + (Number(f.caloriesBurned) || 0), 0);
 
       const cardEl = document.getElementById("dailyDeficitCard");
-      const isStrengthOrGrowth = prof && !isFatLossGoal(prof);
-
-      if (isStrengthOrGrowth) {
-        // Strength & Muscle / Growth Focus -> Highlight Protein Intake & Target Met
+      if (prof && !isFatLossGoal(prof)) {
         const proTarget = Number(prof.proteinTarget) || 45;
         const calTarget = Number(prof.calTarget) || 1450;
         const proRemaining = Number((proTarget - pro).toFixed(1));
         const proPct = proTarget > 0 ? Math.min(999, Math.round((pro / proTarget) * 100)) : 0;
         const proMet = pro >= proTarget;
-
         cardEl.style.borderColor = "rgba(6, 182, 212, 0.36)";
         document.getElementById("deficitCardEyebrow").className = "text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-300";
         document.getElementById("deficitCardEyebrow").textContent = "Muscle & Growth • Protein Focus";
-        document.getElementById("deficitStatusHeadline").textContent = proMet
-          ? `Protein Target Met: ${pro.toFixed(1)}g / ${proTarget}g (${proPct}%)`
-          : `Protein Needed: ${proRemaining}g left to hit ${proTarget}g`;
-
+        document.getElementById("deficitStatusHeadline").textContent = proMet ? `Protein Target Met: ${pro.toFixed(1)}g / ${proTarget}g (${proPct}%)` : `Protein Needed: ${proRemaining}g left to hit ${proTarget}g`;
         const badgeEl = document.getElementById("deficitGoalBadge");
-        badgeEl.className = proMet
-          ? "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/35"
-          : "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-cyan-500/15 text-cyan-200 border border-cyan-400/30";
+        badgeEl.className = proMet ? "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/35" : "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-cyan-500/15 text-cyan-200 border border-cyan-400/30";
         badgeEl.textContent = proMet ? `✓ ${proTarget}g Protein Hit` : `${proPct}% of ${proTarget}g`;
-
         document.getElementById("defBox1Label").textContent = "Protein Intake";
         document.getElementById("defTotalBurnVal").className = "text-xs font-bold text-cyan-300 mt-0.5";
         document.getElementById("defTotalBurnVal").textContent = `${pro.toFixed(1)} g`;
         document.getElementById("defBurnBreakdown").textContent = `Target: ${proTarget}g`;
-
         document.getElementById("defBox2Label").textContent = "Protein Gap";
-        document.getElementById("defFoodIntakeVal").className = proMet
-          ? "text-xs font-bold text-emerald-300 mt-0.5"
-          : "text-xs font-bold text-amber-300 mt-0.5";
-        document.getElementById("defFoodIntakeVal").textContent = proMet
-          ? `+${(pro - proTarget).toFixed(1)}g extra`
-          : `${proRemaining}g left`;
+        document.getElementById("defFoodIntakeVal").className = proMet ? "text-xs font-bold text-emerald-300 mt-0.5" : "text-xs font-bold text-amber-300 mt-0.5";
+        document.getElementById("defFoodIntakeVal").textContent = proMet ? `+${(pro - proTarget).toFixed(1)}g extra` : `${proRemaining}g left`;
         document.getElementById("defBox2Sub").textContent = proMet ? "Goal achieved" : "Remaining today";
-
         document.getElementById("defBox3Label").textContent = "Energy Fuel";
         document.getElementById("defActualVal").className = "text-xs font-bold text-emerald-300 mt-0.5";
         document.getElementById("defActualVal").textContent = `${Math.round(cal)} / ${calTarget}`;
         document.getElementById("defTargetHint").textContent = "kcal growth budget";
       } else {
-        // Fat Loss / Get Lean Mode -> Highlight Calorie Deficit (Conservative 1.0x Base + Exercise)
-        const fatLossProfiles = selectedMember === "All"
-          ? profiles.filter(p => isFatLossGoal(p))
-          : (prof ? [prof] : []);
+        const fatLossProfiles = selectedMember === "All" ? profiles.filter(p => isFatLossGoal(p)) : (prof ? [prof] : []);
         const activeBaselineList = fatLossProfiles.map(p => computeBaselineBurn(p));
         const baseTdeeSum = activeBaselineList.reduce((s, b) => s + b.tdee, 0);
         const deficitGoalSum = activeBaselineList.reduce((s, b) => s + b.deficitTarget, 0);
-
-        const fatLossCal = selectedMember === "All"
-          ? filteredMeals.filter(m => fatLossProfiles.some(fp => fp.name === m.member)).reduce((s, m) => s + m.calories, 0)
-          : cal;
-        const fatLossExBurn = selectedMember === "All"
-          ? filteredFitForDate.filter(f => fatLossProfiles.some(fp => fp.name === f.member)).reduce((s, f) => s + (Number(f.caloriesBurned) || 0), 0)
-          : dayExerciseBurn;
-
+        const fatLossCal = selectedMember === "All" ? filteredMeals.filter(m => fatLossProfiles.some(fp => String(fp.name).toLowerCase() === String(m.member || "").toLowerCase())).reduce((s, m) => s + (Number(m.calories) || 0), 0) : cal;
+        const fatLossExBurn = selectedMember === "All" ? filteredFitForDate.filter(f => fatLossProfiles.some(fp => String(fp.name).toLowerCase() === String(f.member || "").toLowerCase())).reduce((s, f) => s + (Number(f.caloriesBurned) || 0), 0) : dayExerciseBurn;
         const totalBurnDay = baseTdeeSum + fatLossExBurn;
         const netDeficitDay = Math.round(totalBurnDay - fatLossCal);
-
         cardEl.style.borderColor = "rgba(16, 185, 129, 0.25)";
         document.getElementById("deficitCardEyebrow").className = "text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-300";
-        document.getElementById("deficitCardEyebrow").textContent = selectedMember === "All"
-          ? "Fat-Loss Members • Daily Deficit (1.0x Base)"
-          : "Fat Loss & Lean • Daily Deficit (1.0x Base)";
-
+        document.getElementById("deficitCardEyebrow").textContent = selectedMember === "All" ? "Fat-Loss Members • Daily Deficit (1.0x Base)" : "Fat Loss & Lean • Daily Deficit (1.0x Base)";
         const badgeEl = document.getElementById("deficitGoalBadge");
         badgeEl.className = "font-mono-num text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-400/30";
         badgeEl.textContent = netDeficitDay >= deficitGoalSum ? `✓ Hit ${deficitGoalSum} Goal` : `Goal: ${deficitGoalSum} kcal`;
-
         document.getElementById("defBox1Label").textContent = "Total Burn (1.0x)";
         document.getElementById("defTotalBurnVal").className = "text-xs font-bold text-sky-300 mt-0.5";
         document.getElementById("defTotalBurnVal").textContent = `${Math.round(totalBurnDay).toLocaleString()} kcal`;
         document.getElementById("defBurnBreakdown").textContent = `Base ${Math.round(baseTdeeSum)} + Ex ${Math.round(fatLossExBurn)}`;
-
         document.getElementById("defBox2Label").textContent = "Food Intake";
         document.getElementById("defFoodIntakeVal").className = "text-xs font-bold text-amber-300 mt-0.5";
         document.getElementById("defFoodIntakeVal").textContent = `${Math.round(fatLossCal).toLocaleString()} kcal`;
         document.getElementById("defBox2Sub").textContent = "Logged meals";
-
         document.getElementById("defBox3Label").textContent = "Daily Deficit";
-        document.getElementById("defActualVal").className = netDeficitDay >= 0
-          ? "text-xs font-bold text-emerald-300 mt-0.5"
-          : "text-xs font-bold text-rose-400 mt-0.5";
+        document.getElementById("defActualVal").className = netDeficitDay >= 0 ? "text-xs font-bold text-emerald-300 mt-0.5" : "text-xs font-bold text-rose-400 mt-0.5";
         document.getElementById("defActualVal").textContent = `${netDeficitDay >= 0 ? "+" : ""}${netDeficitDay.toLocaleString()} kcal`;
         document.getElementById("defTargetHint").textContent = `Goal: ${deficitGoalSum} kcal`;
-
-        document.getElementById("deficitStatusHeadline").textContent = netDeficitDay >= 0
-          ? `Calorie Deficit Today: ${netDeficitDay.toLocaleString()} kcal`
-          : `Calorie Surplus Today: ${Math.abs(netDeficitDay).toLocaleString()} kcal`;
+        document.getElementById("deficitStatusHeadline").textContent = netDeficitDay >= 0 ? `Calorie Deficit Today: ${netDeficitDay.toLocaleString()} kcal` : `Calorie Surplus Today: ${Math.abs(netDeficitDay).toLocaleString()} kcal`;
       }
 
       const mealListEl = document.getElementById("mealLogsList");
-      if (filteredMeals.length === 0) {
-        mealListEl.innerHTML = `<div class="studio-card rounded-3xl p-8 text-center text-xs text-zinc-500">No meals recorded for ${filterDate || "this selection"}. Upload your meal photo in Gemini chat or add manually above.</div>`;
-      } else {
-        mealListEl.innerHTML = filteredMeals.map(log => `
-          <article
-            onmousedown="startLongPress('meal', '${log.id}', '${log.member} • ${log.meal}')"
-            onmouseup="cancelLongPress()"
-            onmouseleave="cancelLongPress()"
-            ontouchstart="startLongPress('meal', '${log.id}', '${log.member} • ${log.meal}')"
-            ontouchend="cancelLongPress()"
-            class="studio-card long-press-target rounded-3xl overflow-hidden select-none">
+      mealListEl.innerHTML = filteredMeals.length === 0
+        ? `<div class="studio-card rounded-3xl p-8 text-center text-xs text-zinc-500">No meals recorded for ${filterDate || "this selection"}.</div>`
+        : filteredMeals.map(log => `
+          <article onmousedown="startLongPress('meal', '${log.id}', '${log.member} • ${log.meal}')" onmouseup="cancelLongPress()" onmouseleave="cancelLongPress()" ontouchstart="startLongPress('meal', '${log.id}', '${log.member} • ${log.meal}')" ontouchend="cancelLongPress()" class="studio-card long-press-target rounded-3xl overflow-hidden select-none">
             <div class="p-4 flex gap-3.5 items-start">
               ${renderPhotoDeckHtml(log)}
               <div class="flex-1 min-w-0">
@@ -2843,63 +2413,37 @@
                 ${log.notes ? `<p class="text-xs text-zinc-400 mt-1.5 leading-relaxed">${log.notes}</p>` : ""}
               </div>
             </div>
+            ${(log.items || []).length ? `<div class="border-t border-white/5 bg-black/30 px-4 py-2.5 space-y-1.5">${(log.items || []).map(it => `<div class="flex items-center justify-between text-xs"><div class="truncate pr-2"><span class="font-mono-num font-bold text-emerald-300">${it.qty || 1}×</span><span class="font-semibold text-zinc-200 ml-1">${it.name}</span><span class="text-[10px] text-zinc-500 ml-1">(${it.unit_label || it.quantity || ""})</span></div><div class="font-mono-num text-[10px] font-bold text-zinc-400 whitespace-nowrap">${it.calories} kcal • ${it.protein}g P</div></div>`).join("")}</div>` : ""}
+          </article>`).join("");
 
-            <div class="border-t border-white/5 bg-black/30 px-4 py-2.5 space-y-1.5">
-              ${(log.items || []).map(it => `
-                <div class="flex items-center justify-between text-xs">
-                  <div class="truncate pr-2">
-                    <span class="font-mono-num font-bold text-emerald-300">${it.qty || 1}×</span>
-                    <span class="font-semibold text-zinc-200 ml-1">${it.name}</span>
-                    <span class="text-[10px] text-zinc-500 ml-1">(${it.unit_label || it.quantity || ""})</span>
-                  </div>
-                  <div class="font-mono-num text-[10px] font-bold text-zinc-400 whitespace-nowrap">${it.calories} kcal • ${it.protein}g P</div>
-                </div>
-              `).join("")}
-            </div>
-          </article>
-        `).join("");
-      }
-
-      const filteredFit = fitnessLogs.filter(f => selectedMember === "All" || f.member === selectedMember);
+      const filteredFit = fitnessLogs.filter(f => selectedMember === "All" || String(f.member || "").toLowerCase() === String(selectedMember || "").toLowerCase());
       const fitListEl = document.getElementById("fitnessLogsList");
-      if (filteredFit.length === 0) {
-        fitListEl.innerHTML = `<div class="studio-card rounded-3xl p-8 text-center text-xs text-zinc-500">No workouts recorded yet. Log cardio or strength training above.</div>`;
-      } else {
-        fitListEl.innerHTML = filteredFit.map(f => {
+      fitListEl.innerHTML = filteredFit.length === 0
+        ? `<div class="studio-card rounded-3xl p-8 text-center text-xs text-zinc-500">No workouts recorded yet.</div>`
+        : filteredFit.map(f => {
           const isCardio = f.category === "Cardio";
           const badgeClass = isCardio ? "bg-sky-500/15 text-sky-300 border-sky-400/25" : "bg-violet-500/15 text-violet-300 border-violet-400/25";
-          const metricText = isCardio
-            ? (f.stepsOrVolume ? `${f.stepsOrVolume.toLocaleString()} steps` : "")
-            : (f.stepsOrVolume ? `${f.stepsOrVolume} sets` : "");
-          return `
-            <article
-              onmousedown="startLongPress('fitness', '${f.id}', '${f.member} • ${f.activity}')"
-              onmouseup="cancelLongPress()"
-              onmouseleave="cancelLongPress()"
-              ontouchstart="startLongPress('fitness', '${f.id}', '${f.member} • ${f.activity}')"
-              ontouchend="cancelLongPress()"
-              class="studio-card long-press-target rounded-3xl p-4 select-none">
-              <div class="flex items-start justify-between">
-                <div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${badgeClass}">${f.member} • ${f.category}</span>
-                    ${f.bodyPart ? `<span class="text-[10px] font-bold bg-white/5 text-zinc-300 border border-white/10 px-2 py-0.5 rounded-md">${f.bodyPart}</span>` : ""}
-                    <span class="font-mono-num text-[10px] text-zinc-500">${f.date}</span>
-                  </div>
-                  <div class="font-bold text-white text-sm mt-2">${f.activity}</div>
-                  <div class="font-mono-num flex flex-wrap gap-3 text-xs font-bold text-zinc-400 mt-1">
-                    <span class="text-sky-300">⏱ ${f.durationMin}m</span>
-                    ${metricText ? `<span>📊 ${metricText}</span>` : ""}
-                    <span class="text-emerald-300">🔥 ${f.caloriesBurned} kcal</span>
-                  </div>
-                  ${f.notes ? `<p class="text-xs text-zinc-500 mt-1.5">${f.notes}</p>` : ""}
+          const metricText = isCardio ? (f.stepsOrVolume ? `${Number(f.stepsOrVolume).toLocaleString()} steps` : "") : (f.stepsOrVolume ? `${f.stepsOrVolume} sets` : "");
+          return `<article onmousedown="startLongPress('fitness', '${f.id}', '${f.member} • ${f.activity}')" onmouseup="cancelLongPress()" onmouseleave="cancelLongPress()" ontouchstart="startLongPress('fitness', '${f.id}', '${f.member} • ${f.activity}')" ontouchend="cancelLongPress()" class="studio-card long-press-target rounded-3xl p-4 select-none">
+            <div class="flex items-start justify-between">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${badgeClass}">${f.member} • ${f.category}</span>
+                  ${f.bodyPart ? `<span class="text-[10px] font-bold bg-white/5 text-zinc-300 border border-white/10 px-2 py-0.5 rounded-md">${f.bodyPart}</span>` : ""}
+                  <span class="font-mono-num text-[10px] text-zinc-500">${f.date}</span>
                 </div>
-                <button onclick="openActionSheet('fitness', '${f.id}', '${f.member} • ${f.activity}')" class="w-7 h-7 rounded-full hover:bg-white/10 text-zinc-400 font-bold text-sm flex items-center justify-center">⋮</button>
+                <div class="font-bold text-white text-sm mt-2">${f.activity}</div>
+                <div class="font-mono-num flex flex-wrap gap-3 text-xs font-bold text-zinc-400 mt-1">
+                  <span class="text-sky-300">⏱ ${f.durationMin}m</span>
+                  ${metricText ? `<span>📊 ${metricText}</span>` : ""}
+                  <span class="text-emerald-300">🔥 ${f.caloriesBurned} kcal</span>
+                </div>
+                ${f.notes ? `<p class="text-xs text-zinc-500 mt-1.5">${f.notes}</p>` : ""}
               </div>
-            </article>
-          `;
+              <button onclick="openActionSheet('fitness', '${f.id}', '${f.member} • ${f.activity}')" class="w-7 h-7 rounded-full hover:bg-white/10 text-zinc-400 font-bold text-sm flex items-center justify-center">⋮</button>
+            </div>
+          </article>`;
         }).join("");
-      }
     }
 
     function handlePeriodFilterChange() {
@@ -2911,57 +2455,16 @@
     }
 
     function filterByAnalyticsPeriod(records) {
-      const pType = document.getElementById("filterPeriodType").value;
-      const year = document.getElementById("filterYear").value;
-      const month = document.getElementById("filterMonth").value;
-      const exactDate = document.getElementById("filterExactDate").value;
+      const pType = document.getElementById("filterPeriodType")?.value || "month";
+      const year = document.getElementById("filterYear")?.value || "2026";
+      const month = document.getElementById("filterMonth")?.value || "11";
+      const exactDate = document.getElementById("filterExactDate")?.value || getLocalDateStr(0);
 
-      const memberFiltered = records.filter(r => selectedMember === "All" || r.member === selectedMember);
-
-      if (pType === "day") {
-        document.getElementById("analyticsRangeLabel").textContent = exactDate;
-        return memberFiltered.filter(r => r.date === exactDate);
-      }
-      if (pType === "week") {
-        const startStr = getLocalDateStr(-7);
-        document.getElementById("analyticsRangeLabel").textContent = "Last 7 Days";
-        return memberFiltered.filter(r => r.date >= startStr);
-      }
-      if (pType === "year") {
-        document.getElementById("analyticsRangeLabel").textContent = `Year ${year}`;
-        return memberFiltered.filter(r => r.date.startsWith(year));
-      }
-      const ym = `${year}-${month}`;
-      const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      document.getElementById("analyticsRangeLabel").textContent = `${monthNames[Number(month)-1]} ${year}`;
-      return memberFiltered.filter(r => r.date.startsWith(ym));
-    }
-
-    function destroyChart(key) {
-      if (charts[key]) {
-        charts[key].destroy();
-        delete charts[key];
-      }
-    }
-
-    function filterByAnalyticsPeriod(records) {
-      const pTypeEl = document.getElementById("filterPeriodType");
-      const yearEl = document.getElementById("filterYear");
-      const monthEl = document.getElementById("filterMonth");
-      const exactDateEl = document.getElementById("filterExactDate");
-
-      const pType = pTypeEl ? pTypeEl.value : "month";
-      const year = yearEl ? yearEl.value : "2026";
-      const month = monthEl ? monthEl.value : "11";
-      const exactDate = exactDateEl ? exactDateEl.value : getLocalDateStr(0);
-
-      const memberFiltered = (records || []).filter(r => {
-        if (selectedMember === "All") return true;
-        return String(r.member || "").trim().toLowerCase() === String(selectedMember || "").trim().toLowerCase();
-      });
+      const memberFiltered = (records || []).filter(r =>
+        selectedMember === "All" || String(r.member || "").trim().toLowerCase() === String(selectedMember || "").trim().toLowerCase()
+      );
 
       const rangeEl = document.getElementById("analyticsRangeLabel");
-
       if (pType === "day") {
         const normExact = normalizeDateStr(exactDate);
         if (rangeEl) rangeEl.textContent = normExact || exactDate;
@@ -2983,14 +2486,129 @@
       return memberFiltered.filter(r => normalizeDateStr(r.date).startsWith(ym));
     }
 
-    function renderAnalytics() {
-      if (typeof Chart === "undefined") {
-        showToast("Chart library loading — please retry");
+    function destroyChart(key) {
+      if (charts[key]) {
+        try { charts[key].destroy(); } catch (e) {}
+        delete charts[key];
+      }
+    }
+
+    // Pure HTML5 Canvas fallback renderer when Chart.js CDN is unavailable/offline
+    function drawNativeCanvasChart(canvas, spec) {
+      if (!canvas) return;
+      const parent = canvas.parentElement;
+      const cssW = Math.max(240, (parent ? parent.clientWidth : 320) - 8);
+      const cssH = Math.max(170, parent ? parent.clientHeight : 210);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+      canvas.style.width = cssW + "px";
+      canvas.style.height = cssH + "px";
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      ctx.fillStyle = "#a1a1aa";
+      ctx.font = "600 10px 'Plus Jakarta Sans', sans-serif";
+
+      if (spec.kind === "doughnut") {
+        const total = spec.values.reduce((a, b) => a + b, 0) || 1;
+        const cx = cssW / 2;
+        const cy = (cssH - 28) / 2;
+        const r = Math.min(cx, cy) - 14;
+        const ir = r * 0.62;
+        let angle = -Math.PI / 2;
+        spec.values.forEach((val, idx) => {
+          const sweep = (val / total) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, r, angle, angle + sweep);
+          ctx.closePath();
+          ctx.fillStyle = spec.colors[idx] || "#34d399";
+          ctx.fill();
+          angle += sweep;
+        });
+        ctx.beginPath();
+        ctx.arc(cx, cy, ir, 0, Math.PI * 2);
+        ctx.fillStyle = "#12151c";
+        ctx.fill();
+
+        // Legend at bottom
+        let lx = 12;
+        const ly = cssH - 10;
+        spec.labels.forEach((lbl, idx) => {
+          ctx.fillStyle = spec.colors[idx] || "#34d399";
+          ctx.fillRect(lx, ly - 7, 8, 8);
+          ctx.fillStyle = "#d4d4d8";
+          ctx.fillText(lbl.split(" ")[0], lx + 12, ly);
+          lx += Math.max(68, Math.round(cssW / spec.labels.length));
+        });
+        ctx.restore();
         return;
       }
 
+      const padL = 38, padR = 12, padT = 18, padB = 26;
+      const plotW = Math.max(40, cssW - padL - padR);
+      const plotH = Math.max(40, cssH - padT - padB);
+      const vals = spec.values.map(v => Number(v) || 0);
+      const maxVal = Math.max(10, ...vals, ...(spec.targetLine || []).map(v => Number(v) || 0));
+
+      // Grid lines
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 1;
+      for (let g = 0; g <= 4; g++) {
+        const y = padT + (plotH * g) / 4;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+        const tickVal = Math.round(maxVal * (1 - g / 4));
+        ctx.fillStyle = "#71717a";
+        ctx.fillText(String(tickVal), 4, y + 3);
+      }
+
+      const n = Math.max(1, spec.labels.length);
+      const slotW = plotW / n;
+      const barW = Math.min(34, Math.max(10, slotW * 0.55));
+
+      vals.forEach((v, i) => {
+        const bh = (v / maxVal) * plotH;
+        const x = padL + i * slotW + (slotW - barW) / 2;
+        const y = padT + plotH - bh;
+        ctx.fillStyle = spec.colors[i % spec.colors.length] || "#34d399";
+        ctx.fillRect(x, y, barW, bh);
+
+        ctx.fillStyle = "#a1a1aa";
+        ctx.textAlign = "center";
+        ctx.fillText(String(spec.labels[i] || ""), padL + i * slotW + slotW / 2, cssH - 8);
+        ctx.textAlign = "left";
+      });
+
+      if (Array.isArray(spec.targetLine) && spec.targetLine.length > 0) {
+        ctx.strokeStyle = "#fbbf24";
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        spec.targetLine.forEach((tv, i) => {
+          const lx = padL + i * slotW + slotW / 2;
+          const ly = padT + plotH - ((Number(tv) || 0) / maxVal) * plotH;
+          if (i === 0) ctx.moveTo(lx, ly);
+          else ctx.lineTo(lx, ly);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.restore();
+    }
+
+    function renderAnalytics() {
       const fMeals = filterByAnalyticsPeriod(mealLogs);
       const fFit = filterByAnalyticsPeriod(fitnessLogs);
+      const hasChartJs = typeof Chart !== "undefined";
 
       if (currentMode === "nutrition") {
         let totalCal = 0, totalPro = 0, totalCarb = 0, totalFat = 0, totalFib = 0;
@@ -3007,26 +2625,16 @@
         const totalBurn = fFit.reduce((s, x) => s + (Number(x.caloriesBurned) || 0), 0);
         const dayCount = Math.max(1, uniqueDays.size);
 
-        const elTotCal = document.getElementById("anTotalCal");
-        const elAvgCal = document.getElementById("anAvgCal");
-        const elTotPro = document.getElementById("anTotalPro");
-        const elAvgPro = document.getElementById("anAvgPro");
-        const elCarbFat = document.getElementById("anCarbFat");
-        const elTotFib = document.getElementById("anTotalFib");
-        const elNetCal = document.getElementById("anNetCal");
-
-        if (elTotCal) elTotCal.textContent = `${Math.round(totalCal).toLocaleString()} kcal`;
-        if (elAvgCal) elAvgCal.textContent = `Avg: ${Math.round(totalCal / dayCount).toLocaleString()} / day`;
-        if (elTotPro) elTotPro.textContent = `${totalPro.toFixed(1)} g`;
-        if (elAvgPro) elAvgPro.textContent = `Avg: ${(totalPro / dayCount).toFixed(1)}g / day`;
-        if (elCarbFat) elCarbFat.textContent = `${Math.round(totalCarb)}g C • ${Math.round(totalFat)}g F`;
-        if (elTotFib) elTotFib.textContent = `Fiber: ${totalFib.toFixed(1)}g`;
-        if (elNetCal) elNetCal.textContent = `${Math.round(totalCal - totalBurn).toLocaleString()} kcal`;
+        document.getElementById("anTotalCal").textContent = `${Math.round(totalCal).toLocaleString()} kcal`;
+        document.getElementById("anAvgCal").textContent = `Avg: ${Math.round(totalCal / dayCount).toLocaleString()} / day`;
+        document.getElementById("anTotalPro").textContent = `${totalPro.toFixed(1)} g`;
+        document.getElementById("anAvgPro").textContent = `Avg: ${(totalPro / dayCount).toFixed(1)}g / day`;
+        document.getElementById("anCarbFat").textContent = `${Math.round(totalCarb)}g C • ${Math.round(totalFat)}g F`;
+        document.getElementById("anTotalFib").textContent = `Fiber: ${totalFib.toFixed(1)}g`;
+        document.getElementById("anNetCal").textContent = `${Math.round(totalCal - totalBurn).toLocaleString()} kcal`;
 
         const activeProf = profiles.find(p => String(p.name || "").trim().toLowerCase() === String(selectedMember || "").trim().toLowerCase());
-        const targetCal = activeProf
-          ? (Number(activeProf.calTarget) || 1750)
-          : profiles.reduce((s, p) => s + (Number(p.calTarget) || 0), 0);
+        const targetCal = activeProf ? (Number(activeProf.calTarget) || 1750) : profiles.reduce((s, p) => s + (Number(p.calTarget) || 0), 0);
 
         const byDate = {};
         fMeals.forEach(m => {
@@ -3036,91 +2644,56 @@
         });
         const dates = Object.keys(byDate).sort();
         const cals = dates.map(d => Math.round(byDate[d]));
+        const xLabels = dates.length ? dates.map(d => d.slice(5)) : ["No Data"];
+        const barData = dates.length ? cals : [0];
+        const lineData = xLabels.map(() => targetCal);
 
         const mintHatch = createPencilPattern("#34d399", 0.16, -45, 6, 1.8);
         const cyanHatch = createPencilPattern("#38bdf8", 0.16, 45, 6, 1.8);
         const amberHatch = createPencilPattern("#fbbf24", 0.16, -45, 6, 1.8);
         const coralHatch = createPencilPattern("#fb7185", 0.16, 45, 6, 1.8);
 
-        const commonOpts = {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: { duration: 250 }
-        };
-
-        // 1. Daily Calorie Intake vs. Target
         destroyChart("calTrend");
         const calCtx = document.getElementById("chartCalorieTrend");
         if (calCtx) {
-          const xLabels = dates.length ? dates.map(d => d.slice(5)) : ["No Data"];
-          const barData = dates.length ? cals : [0];
-          const lineData = xLabels.map(() => targetCal);
-          charts.calTrend = new Chart(calCtx, {
-            type: "bar",
-            data: {
-              labels: xLabels,
-              datasets: [
-                {
-                  label: "Calories (kcal)",
-                  data: barData,
-                  backgroundColor: mintHatch,
-                  borderColor: "#34d399",
-                  borderWidth: 1.8,
-                  borderRadius: 8,
-                  order: 2
-                },
-                {
-                  label: "Daily Target",
-                  data: lineData,
-                  type: "line",
-                  borderColor: "#38bdf8",
-                  borderDash: [6, 5],
-                  borderWidth: 2,
-                  pointRadius: 3,
-                  pointBackgroundColor: "#38bdf8",
-                  fill: false,
-                  order: 1
-                }
-              ]
-            },
-            options: {
-              ...commonOpts,
-              scales: {
-                y: { beginAtZero: true }
+          if (hasChartJs) {
+            charts.calTrend = new Chart(calCtx, {
+              type: "bar",
+              data: {
+                labels: xLabels,
+                datasets: [
+                  { label: "Calories (kcal)", data: barData, backgroundColor: mintHatch, borderColor: "#34d399", borderWidth: 1.8, borderRadius: 8, order: 2 },
+                  { label: "Daily Target", data: lineData, type: "line", borderColor: "#38bdf8", borderDash: [6, 5], borderWidth: 2, pointRadius: 3, pointBackgroundColor: "#38bdf8", fill: false, order: 1 }
+                ]
               },
-              plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-            }
-          });
+              options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } } }
+            });
+          } else {
+            drawNativeCanvasChart(calCtx, { kind: "bar", labels: xLabels, values: barData, targetLine: lineData, colors: ["#34d399"] });
+          }
         }
 
-        // 2. Macro Calorie Split
+        const pKcal = Math.round(totalPro * 4);
+        const cKcal = Math.round(totalCarb * 4);
+        const fKcal = Math.round(totalFat * 9);
+        const hasMac = (pKcal + cKcal + fKcal) > 0;
+        const macLabels = ["Protein (4 kcal/g)", "Carbs (4 kcal/g)", "Fats (9 kcal/g)"];
+        const macVals = hasMac ? [pKcal, cKcal, fKcal] : [1, 1, 1];
+
         destroyChart("macroDoughnut");
         const macCtx = document.getElementById("chartMacroDoughnut");
         if (macCtx) {
-          const pKcal = Math.round(totalPro * 4);
-          const cKcal = Math.round(totalCarb * 4);
-          const fKcal = Math.round(totalFat * 9);
-          const hasMac = (pKcal + cKcal + fKcal) > 0;
-          charts.macroDoughnut = new Chart(macCtx, {
-            type: "doughnut",
-            data: {
-              labels: ["Protein (4 kcal/g)", "Carbs (4 kcal/g)", "Fats (9 kcal/g)"],
-              datasets: [{
-                data: hasMac ? [pKcal, cKcal, fKcal] : [1, 1, 1],
-                backgroundColor: [cyanHatch, amberHatch, coralHatch],
-                borderColor: ["#38bdf8", "#fbbf24", "#fb7185"],
-                borderWidth: 2
-              }]
-            },
-            options: {
-              ...commonOpts,
-              cutout: "66%",
-              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
-            }
-          });
+          if (hasChartJs) {
+            charts.macroDoughnut = new Chart(macCtx, {
+              type: "doughnut",
+              data: { labels: macLabels, datasets: [{ data: macVals, backgroundColor: [cyanHatch, amberHatch, coralHatch], borderColor: ["#38bdf8", "#fbbf24", "#fb7185"], borderWidth: 2 }] },
+              options: { responsive: true, maintainAspectRatio: false, animation: false, cutout: "66%", plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } } }
+            });
+          } else {
+            drawNativeCanvasChart(macCtx, { kind: "doughnut", labels: macLabels, values: macVals, colors: ["#38bdf8", "#fbbf24", "#fb7185"] });
+          }
         }
 
-        // 3. Calories by Meal Slot
         const slotBuckets = [
           { label: "B'fast", matches: ["breakfast"] },
           { label: "Pre-L", matches: ["pre-lunch snack", "pre-lunch", "snack", "morning snack"] },
@@ -3135,28 +2708,17 @@
         destroyChart("mealSlots");
         const slotCtx = document.getElementById("chartMealSlots");
         if (slotCtx) {
-          charts.mealSlots = new Chart(slotCtx, {
-            type: "bar",
-            data: {
-              labels: slotBuckets.map(sb => sb.label),
-              datasets: [{
-                label: "kcal",
-                data: slotTotals,
-                backgroundColor: cyanHatch,
-                borderColor: "#38bdf8",
-                borderWidth: 1.8,
-                borderRadius: 8
-              }]
-            },
-            options: {
-              ...commonOpts,
-              scales: { y: { beginAtZero: true } },
-              plugins: { legend: { display: false } }
-            }
-          });
+          if (hasChartJs) {
+            charts.mealSlots = new Chart(slotCtx, {
+              type: "bar",
+              data: { labels: slotBuckets.map(sb => sb.label), datasets: [{ label: "kcal", data: slotTotals, backgroundColor: cyanHatch, borderColor: "#38bdf8", borderWidth: 1.8, borderRadius: 8 }] },
+              options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+            });
+          } else {
+            drawNativeCanvasChart(slotCtx, { kind: "bar", labels: slotBuckets.map(sb => sb.label), values: slotTotals, colors: ["#38bdf8"] });
+          }
         }
 
-        // 4. Daily Deficit OR Protein Target Chart
         const defCanvas = document.getElementById("chartDailyDeficit");
         const defSection = defCanvas ? defCanvas.closest("section") : null;
         const anDefTitle = defSection ? defSection.querySelector("h3") : null;
@@ -3169,424 +2731,111 @@
             if (anDefTitle) anDefTitle.textContent = "Daily Protein Intake vs. Protein Target";
             if (anDefSub) anDefSub.textContent = "Protein grams logged each day against muscle & growth target";
             if (anDefBadge) anDefBadge.textContent = "Protein Focus";
-
             const proByDate = {};
-            fMeals.forEach(m => {
-              const dKey = normalizeDateStr(m.date);
-              if (!dKey) return;
-              proByDate[dKey] = Number(((proByDate[dKey] || 0) + (Number(m.protein) || 0)).toFixed(1));
-            });
+            fMeals.forEach(m => { const dKey = normalizeDateStr(m.date); if (dKey) proByDate[dKey] = Number(((proByDate[dKey] || 0) + (Number(m.protein) || 0)).toFixed(1)); });
             const proDates = Object.keys(proByDate).sort();
             const proVals = proDates.map(d => proByDate[d]);
             const proGoal = Number(activeProf.proteinTarget) || 45;
             const pLabels = proDates.length ? proDates.map(d => d.slice(5)) : ["No Data"];
-
-            charts.dailyDeficit = new Chart(defCanvas, {
-              type: "bar",
-              data: {
-                labels: pLabels,
-                datasets: [
-                  {
-                    label: "Protein Intake (g)",
-                    data: proDates.length ? proVals : [0],
-                    backgroundColor: cyanHatch,
-                    borderColor: "#38bdf8",
-                    borderWidth: 1.8,
-                    borderRadius: 8,
-                    order: 2
-                  },
-                  {
-                    label: "Protein Target (g)",
-                    data: pLabels.map(() => proGoal),
-                    type: "line",
-                    borderColor: "#34d399",
-                    borderDash: [6, 5],
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    pointBackgroundColor: "#34d399",
-                    fill: false,
-                    order: 1
-                  }
-                ]
-              },
-              options: {
-                ...commonOpts,
-                scales: { y: { beginAtZero: true } },
-                plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-              }
-            });
+            const pData = proDates.length ? proVals : [0];
+            const pGoalLine = pLabels.map(() => proGoal);
+            if (hasChartJs) {
+              charts.dailyDeficit = new Chart(defCanvas, {
+                type: "bar",
+                data: { labels: pLabels, datasets: [
+                  { label: "Protein Intake (g)", data: pData, backgroundColor: cyanHatch, borderColor: "#38bdf8", borderWidth: 1.8, borderRadius: 8, order: 2 },
+                  { label: "Protein Target (g)", data: pGoalLine, type: "line", borderColor: "#34d399", borderDash: [6, 5], borderWidth: 2, pointRadius: 3, pointBackgroundColor: "#34d399", fill: false, order: 1 }
+                ]},
+                options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } } }
+              });
+            } else {
+              drawNativeCanvasChart(defCanvas, { kind: "bar", labels: pLabels, values: pData, targetLine: pGoalLine, colors: ["#38bdf8"] });
+            }
           } else {
             if (anDefTitle) anDefTitle.textContent = "Daily Calorie Deficit vs. Deficit Goal (1.0x Base)";
             if (anDefSub) anDefSub.textContent = "(1.0x BMR + Workout Burn) minus Food Intake each day";
             if (anDefBadge) anDefBadge.textContent = "Deficit Watch";
-
-            const flProfs = selectedMember === "All"
-              ? profiles.filter(p => isFatLossGoal(p))
-              : (activeProf ? [activeProf] : []);
+            const flProfs = selectedMember === "All" ? profiles.filter(p => isFatLossGoal(p)) : (activeProf ? [activeProf] : []);
             const baseList = flProfs.map(p => computeBaselineBurn(p));
             const baseTdeeSum = baseList.reduce((s, b) => s + b.tdee, 0);
             const deficitGoalSum = baseList.reduce((s, b) => s + b.deficitTarget, 0);
-
-            const flIntakeByDate = {};
-            fMeals.forEach(m => {
-              const dKey = normalizeDateStr(m.date);
-              if (!dKey) return;
-              const matchMem = selectedMember !== "All" || flProfs.some(fp => String(fp.name).toLowerCase() === String(m.member || "").toLowerCase());
-              if (matchMem) {
-                flIntakeByDate[dKey] = (flIntakeByDate[dKey] || 0) + (Number(m.calories) || 0);
-              }
-            });
-            const fitByDate = {};
-            fFit.forEach(f => {
-              const dKey = normalizeDateStr(f.date);
-              if (!dKey) return;
-              const matchMem = selectedMember !== "All" || flProfs.some(fp => String(fp.name).toLowerCase() === String(f.member || "").toLowerCase());
-              if (matchMem) {
-                fitByDate[dKey] = (fitByDate[dKey] || 0) + (Number(f.caloriesBurned) || 0);
-              }
-            });
+            const flIntakeByDate = {}, fitByDate = {};
+            fMeals.forEach(m => { const dKey = normalizeDateStr(m.date); if (dKey && (selectedMember !== "All" || flProfs.some(fp => String(fp.name).toLowerCase() === String(m.member || "").toLowerCase()))) flIntakeByDate[dKey] = (flIntakeByDate[dKey] || 0) + (Number(m.calories) || 0); });
+            fFit.forEach(f => { const dKey = normalizeDateStr(f.date); if (dKey && (selectedMember !== "All" || flProfs.some(fp => String(fp.name).toLowerCase() === String(f.member || "").toLowerCase()))) fitByDate[dKey] = (fitByDate[dKey] || 0) + (Number(f.caloriesBurned) || 0); });
             const allDefDates = Array.from(new Set([...Object.keys(flIntakeByDate), ...Object.keys(fitByDate)])).sort();
-            const deficitSeries = allDefDates.map(d => {
-              const intakeVal = flIntakeByDate[d] || 0;
-              const exVal = fitByDate[d] || 0;
-              return Math.round((baseTdeeSum + exVal) - intakeVal);
-            });
+            const deficitSeries = allDefDates.map(d => Math.round((baseTdeeSum + (fitByDate[d] || 0)) - (flIntakeByDate[d] || 0)));
             const dLabels = allDefDates.length ? allDefDates.map(d => d.slice(5)) : ["No Data"];
-
-            charts.dailyDeficit = new Chart(defCanvas, {
-              type: "bar",
-              data: {
-                labels: dLabels,
-                datasets: [
-                  {
-                    label: "Daily Deficit (kcal)",
-                    data: allDefDates.length ? deficitSeries : [0],
-                    backgroundColor: mintHatch,
-                    borderColor: "#34d399",
-                    borderWidth: 1.8,
-                    borderRadius: 8,
-                    order: 2
-                  },
-                  {
-                    label: "Deficit Target",
-                    data: dLabels.map(() => deficitGoalSum),
-                    type: "line",
-                    borderColor: "#fbbf24",
-                    borderDash: [6, 5],
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    pointBackgroundColor: "#fbbf24",
-                    fill: false,
-                    order: 1
-                  }
-                ]
-              },
-              options: {
-                ...commonOpts,
-                plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-              }
-            });
+            const dSeries = allDefDates.length ? deficitSeries : [0];
+            const dGoalLine = dLabels.map(() => deficitGoalSum);
+            if (hasChartJs) {
+              charts.dailyDeficit = new Chart(defCanvas, {
+                type: "bar",
+                data: { labels: dLabels, datasets: [
+                  { label: "Daily Deficit (kcal)", data: dSeries, backgroundColor: mintHatch, borderColor: "#34d399", borderWidth: 1.8, borderRadius: 8, order: 2 },
+                  { label: "Deficit Target", data: dGoalLine, type: "line", borderColor: "#fbbf24", borderDash: [6, 5], borderWidth: 2, pointRadius: 3, pointBackgroundColor: "#fbbf24", fill: false, order: 1 }
+                ]},
+                options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } } }
+              });
+            } else {
+              drawNativeCanvasChart(defCanvas, { kind: "bar", labels: dLabels, values: dSeries, targetLine: dGoalLine, colors: ["#34d399"] });
+            }
           }
         }
-
       } else {
         const totalMin = fFit.reduce((s, x) => s + (Number(x.durationMin) || 0), 0);
         const totalSteps = fFit.reduce((s, x) => s + (x.category === "Cardio" ? (Number(x.stepsOrVolume) || 0) : 0), 0);
         const totalBurn = fFit.reduce((s, x) => s + (Number(x.caloriesBurned) || 0), 0);
-
         document.getElementById("fitTotalMin").textContent = `${totalMin} min`;
         document.getElementById("fitTotalSteps").textContent = totalSteps.toLocaleString();
         document.getElementById("fitTotalBurn").textContent = `${totalBurn.toLocaleString()} kcal`;
-
         const cyanHatch = createPencilPattern("#38bdf8", 0.16, -45, 6, 1.8);
         const mintHatch = createPencilPattern("#34d399", 0.16, 45, 6, 1.8);
         const violetHatch = createPencilPattern("#a78bfa", 0.16, -45, 6, 1.8);
-
         const byDate = {};
-        fFit.forEach(f => {
-          const dKey = normalizeDateStr(f.date);
-          if (!dKey) return;
-          if (!byDate[dKey]) byDate[dKey] = { min: 0, burn: 0 };
-          byDate[dKey].min += Number(f.durationMin) || 0;
-          byDate[dKey].burn += Number(f.caloriesBurned) || 0;
-        });
-
+        fFit.forEach(f => { const dKey = normalizeDateStr(f.date); if (dKey) { if (!byDate[dKey]) byDate[dKey] = { min: 0, burn: 0 }; byDate[dKey].min += Number(f.durationMin) || 0; byDate[dKey].burn += Number(f.caloriesBurned) || 0; } });
         const fitDates = Object.keys(byDate).sort();
+        const fLabels = fitDates.length ? fitDates.map(d => d.slice(5)) : ["No Data"];
+        const fMinVals = fitDates.length ? fitDates.map(d => byDate[d].min) : [0];
+        const fBurnVals = fitDates.length ? fitDates.map(d => byDate[d].burn) : [0];
+
         destroyChart("fitTrend");
         const fitTrendCtx = document.getElementById("chartFitnessTrend");
         if (fitTrendCtx) {
-          charts.fitTrend = new Chart(fitTrendCtx, {
-            type: "bar",
-            data: {
-              labels: fitDates.length ? fitDates.map(d => d.slice(5)) : ["No Data"],
-              datasets: [
-                { label: "Duration (min)", data: fitDates.length ? fitDates.map(d => byDate[d].min) : [0], backgroundColor: cyanHatch, borderColor: "#38bdf8", borderWidth: 1.8, borderRadius: 8 },
-                { label: "Burned (kcal)", data: fitDates.length ? fitDates.map(d => byDate[d].burn) : [0], backgroundColor: mintHatch, borderColor: "#34d399", borderWidth: 1.8, borderRadius: 8 }
-              ]
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
-          });
+          if (hasChartJs) {
+            charts.fitTrend = new Chart(fitTrendCtx, { type: "bar", data: { labels: fLabels, datasets: [{ label: "Duration (min)", data: fMinVals, backgroundColor: cyanHatch, borderColor: "#38bdf8", borderWidth: 1.8, borderRadius: 8 }, { label: "Burned (kcal)", data: fBurnVals, backgroundColor: mintHatch, borderColor: "#34d399", borderWidth: 1.8, borderRadius: 8 }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { beginAtZero: true } } } });
+          } else {
+            drawNativeCanvasChart(fitTrendCtx, { kind: "bar", labels: fLabels, values: fMinVals, colors: ["#38bdf8"] });
+          }
         }
 
         const cardioMin = fFit.filter(f => f.category === "Cardio").reduce((s, x) => s + (Number(x.durationMin) || 0), 0);
         const strengthMin = fFit.filter(f => f.category === "Strength Training").reduce((s, x) => s + (Number(x.durationMin) || 0), 0);
+        const catVals = (cardioMin + strengthMin) > 0 ? [cardioMin, strengthMin] : [1, 1];
         destroyChart("fitCat");
         const fitCatCtx = document.getElementById("chartFitCategory");
         if (fitCatCtx) {
-          charts.fitCat = new Chart(fitCatCtx, {
-            type: "doughnut",
-            data: {
-              labels: ["Cardio (min)", "Strength (min)"],
-              datasets: [{
-                data: (cardioMin + strengthMin) > 0 ? [cardioMin, strengthMin] : [1, 1],
-                backgroundColor: [cyanHatch, violetHatch],
-                borderColor: ["#38bdf8", "#a78bfa"],
-                borderWidth: 2
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              cutout: "66%",
-              plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } }
-            }
-          });
+          if (hasChartJs) {
+            charts.fitCat = new Chart(fitCatCtx, { type: "doughnut", data: { labels: ["Cardio (min)", "Strength (min)"], datasets: [{ data: catVals, backgroundColor: [cyanHatch, violetHatch], borderColor: ["#38bdf8", "#a78bfa"], borderWidth: 2 }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, cutout: "66%", plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } } } });
+          } else {
+            drawNativeCanvasChart(fitCatCtx, { kind: "doughnut", labels: ["Cardio", "Strength"], values: catVals, colors: ["#38bdf8", "#a78bfa"] });
+          }
         }
 
         const bpMap = {};
-        fFit.filter(f => f.category === "Strength Training").forEach(f => {
-          const bp = f.bodyPart || "Full Body";
-          bpMap[bp] = (bpMap[bp] || 0) + (Number(f.durationMin) || 0);
-        });
+        fFit.filter(f => f.category === "Strength Training").forEach(f => { const bp = f.bodyPart || "Full Body"; bpMap[bp] = (bpMap[bp] || 0) + (Number(f.durationMin) || 0); });
+        const bpLabels = Object.keys(bpMap).length ? Object.keys(bpMap) : ["No Strength Logs"];
+        const bpVals = Object.values(bpMap).length ? Object.values(bpMap) : [0];
         destroyChart("bodyParts");
         const bpCtx = document.getElementById("chartBodyParts");
         if (bpCtx) {
-          charts.bodyParts = new Chart(bpCtx, {
-            type: "bar",
-            data: {
-              labels: Object.keys(bpMap).length ? Object.keys(bpMap) : ["No Strength Logs"],
-              datasets: [{
-                label: "Minutes",
-                data: Object.values(bpMap).length ? Object.values(bpMap) : [0],
-                backgroundColor: violetHatch,
-                borderColor: "#a78bfa",
-                borderWidth: 1.8,
-                borderRadius: 8
-              }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
-          });
-        }
-      }
-    }
-
-    // ==================== NAME-BASED USER SELECTION, TRANSLUCENT LOADER & CACHE SYNC ====================
-    const DATA_CACHE_KEY = "vitapulse_sheet_cache_v1";
-    let hasSelectedMemberExplicitly = false;
-
-    function matchProfileByFirstName(rawFirstName, profileList) {
-      const clean = String(rawFirstName || "").trim().toLowerCase();
-      if (!clean || !Array.isArray(profileList)) return null;
-      let found = profileList.find(p => String(p.name || "").trim().toLowerCase() === clean);
-      if (found) return found;
-      if (clean === "hina") found = profileList.find(p => String(p.name || "").trim().toLowerCase() === "heena");
-      if (!found && clean === "heena") found = profileList.find(p => String(p.name || "").trim().toLowerCase() === "hina");
-      if (found) return found;
-      return profileList.find(p => String(p.name || "").trim().toLowerCase().startsWith(clean)) || null;
-    }
-
-    function applyEnteredUserSelection(profileList) {
-      const fn = (localStorage.getItem("vitapulse_first_name") || "").trim();
-      const ln = (localStorage.getItem("vitapulse_last_name") || "").trim();
-      const statusSub = document.getElementById("syncStatusSub");
-      if (statusSub && fn) {
-        const fullName = [fn, ln].filter(Boolean).join(" ");
-        statusSub.textContent = `${fullName} • Google Sheets`;
-      }
-      if (!fn || hasSelectedMemberExplicitly) return;
-      const matched = matchProfileByFirstName(fn, profileList);
-      if (matched && matched.name) {
-        selectedMember = matched.name;
-        const mealMemberEl = document.getElementById("mealMemberSelect");
-        if (mealMemberEl) mealMemberEl.value = matched.name;
-        const fitMemberEl = document.getElementById("fitMemberSelect");
-        if (fitMemberEl) fitMemberEl.value = matched.name;
-      }
-    }
-
-    function openUserSwitchModal() {
-      document.getElementById("firstNameInput").value = localStorage.getItem("vitapulse_first_name") || "";
-      document.getElementById("lastNameInput").value = localStorage.getItem("vitapulse_last_name") || "";
-      document.getElementById("pinInput").value = FAMILY_PIN;
-      document.getElementById("pinModal").classList.remove("hidden");
-    }
-
-    function showTranslucentSyncModal(show) {
-      const el = document.getElementById("translucentSyncModal");
-      if (!el) return;
-      el.classList.toggle("hidden", !show);
-    }
-
-    function setFloatingSyncPill(show, text = "Showing cached data • Syncing in background…") {
-      const pill = document.getElementById("floatingSyncPill");
-      const txt = document.getElementById("floatingSyncText");
-      if (!pill) return;
-      if (txt) txt.textContent = text;
-      pill.style.display = show ? "inline-flex" : "none";
-    }
-
-    function applyHydratedData(data) {
-      mealLogs = (data.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
-      fitnessLogs = (data.fitness || []).map(f => ({ ...f, date: normalizeDateStr(f.date) }));
-      progressPlan = data.progressPlan || [];
-      profiles = data.profiles && data.profiles.length > 0 ? data.profiles : [
-        { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "" },
-        { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "" }
-      ];
-
-      applyEnteredUserSelection(profiles);
-
-      const todayStr = getLocalDateStr(0);
-      const curFilterEl = document.getElementById("trackerFilterDate");
-      const mealFormDateEl = document.getElementById("mealDateInput");
-      if (mealLogs.length > 0) {
-        if (mealLogs.some(m => m.date === todayStr)) {
-          curFilterEl.value = todayStr;
-          if (mealFormDateEl && !mealFormDateEl.value) mealFormDateEl.value = todayStr;
-        } else if (!mealLogs.some(m => m.date === curFilterEl.value)) {
-          curFilterEl.value = mealLogs[0].date;
-          if (mealFormDateEl) mealFormDateEl.value = mealLogs[0].date;
-        }
-      }
-
-      populateMemberUI();
-      renderTrackerLists();
-      renderProfilesPage();
-      renderRoadmapPage();
-      if (currentPage === "analytics") renderAnalytics();
-    }
-
-    const _origSelectMember = selectMember;
-    selectMember = function(name) {
-      hasSelectedMemberExplicitly = true;
-      _origSelectMember(name);
-    };
-
-    unlockApp = function() {
-      const fn = document.getElementById("firstNameInput").value.trim();
-      const ln = document.getElementById("lastNameInput").value.trim();
-      const pin = document.getElementById("pinInput").value.trim();
-      const url = document.getElementById("apiUrlInput").value.trim();
-
-      if (!fn) return alert("Please enter your First Name.");
-      if (!pin) return alert("Please enter your Family PIN.");
-
-      hasSelectedMemberExplicitly = false;
-      localStorage.setItem("vitapulse_first_name", fn);
-      localStorage.setItem("vitapulse_last_name", ln);
-
-      if (url) {
-        APP_URL = url;
-        localStorage.setItem("vitapulse_url", url);
-      }
-      FAMILY_PIN = pin;
-      localStorage.setItem("vitapulse_pin", pin);
-
-      document.getElementById("pinModal").classList.add("hidden");
-      syncAllData();
-    };
-
-    syncAllData = async function() {
-      const rawCache = localStorage.getItem(DATA_CACHE_KEY);
-      let hasCache = false;
-      if (rawCache) {
-        try {
-          const parsed = JSON.parse(rawCache);
-          if (parsed && (Array.isArray(parsed.meals) || Array.isArray(parsed.profiles))) {
-            applyHydratedData(parsed);
-            hasCache = true;
-            setFloatingSyncPill(true, "Showing cached data • Syncing in background…");
+          if (hasChartJs) {
+            charts.bodyParts = new Chart(bpCtx, { type: "bar", data: { labels: bpLabels, datasets: [{ label: "Minutes", data: bpVals, backgroundColor: violetHatch, borderColor: "#a78bfa", borderWidth: 1.8, borderRadius: 8 }] }, options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } } });
+          } else {
+            drawNativeCanvasChart(bpCtx, { kind: "bar", labels: bpLabels, values: bpVals, colors: ["#a78bfa"] });
           }
-        } catch (e) {}
-      }
-
-      const fallbackSeed = {
-        profiles: [
-          { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "Recomp & fat loss (~2 kg/mo) with 125g protein and 1.0x conservative base burn.", bmr: 1555, tdee: 1555, deficitTarget: 250 },
-          { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "Sustainable fat loss & toning (~3 kg/mo) with 105g protein and 1.0x conservative base burn.", bmr: 1478, tdee: 1478, deficitTarget: 300 },
-          { id: "USR-1795259916090", name: "Samarth", gender: "Male", age: 4, weightKg: 17.6, heightCm: 114, waistCm: 56, bmi: 13.5, bodyFatPct: 12.1, goal: "Build Muscle & Gain Strength", conditions: "None", targetWeightKg: 19.2, calTarget: 1450, proteinTarget: 45, carbsTarget: 195, fatsTarget: 52, fiberTarget: 20, aiPlanSummary: "Muscle & strength growth for 4yo with 45g protein target.", bmr: 895, tdee: 895, deficitTarget: 0 },
-          { id: "USR-1795259980698", name: "Hiyansh", gender: "Male", age: 1, weightKg: 7, heightCm: 69, waistCm: 39, bmi: 14.7, bodyFatPct: 15.1, goal: "Catch-Up Growth (Height & Weight)", conditions: "Underweight / Under-height (<3rd %ile) | Pure Veg | 50% Breastmilk + 50% Solids", targetWeightKg: 8.6, calTarget: 1000, proteinTarget: 28, carbsTarget: 125, fatsTarget: 42, fiberTarget: 12, aiPlanSummary: "Catch-up growth (~50% breastmilk + ~50% pure veg solids) with 28g protein target.", bmr: 372, tdee: 372, deficitTarget: 0 }
-        ],
-        meals: [
-          { id: "LOG-20261121-DIN1", date: "2026-11-21", member: "Vikas", meal: "Dinner", items: [{ name: "Pani Puri (16 Puris + Kala Chana, Potato, Onion & Spiced Pani)", qty: 2, unit_label: "plates (8 puris/plate)", calories: 980, protein: 31.4, carbs: 160.0, fats: 46.2, fiber: 17.8 }, { name: "Vada Pav (Pav + Batata Vada + Shredded Garnish & Green Chili)", qty: 1, unit_label: "vada pav", calories: 395, protein: 10.0, carbs: 51.0, fats: 16.8, fiber: 3.8 }], calories: 1375, protein: 41.4, carbs: 211.0, fats: 63.0, fiber: 21.6, photoUrl: "", notes: "2 plates pani puri + 1 vada pav" },
-          { id: "LOG-20261121-SAM-DIN1", date: "2026-11-21", member: "Samarth", meal: "Dinner", items: [{ name: "Dal Rice (Tempered Yellow Dal & Rice)", qty: 1, unit_label: "plate (~160g)", calories: 222, protein: 6.9, carbs: 39.5, fats: 3.6, fiber: 2.6 }, { name: "Crushed Pani Puri with Kala Chana", qty: 5, unit_label: "puris + chana mix", calories: 270, protein: 7.2, carbs: 34.7, fats: 11.7, fiber: 3.7 }], calories: 492, protein: 14.1, carbs: 74.2, fats: 15.3, fiber: 6.3, photoUrl: "", notes: "Dal rice + 5 crushed puris with kala chana" },
-          { id: "LOG-20261121-SAM-LNS1", date: "2026-11-21", member: "Samarth", meal: "Late Night Snack", items: [{ name: "Ripe Banana (Large)", qty: 1, unit_label: "1 large (~135g edible)", calories: 120, protein: 1.5, carbs: 30.8, fats: 0.4, fiber: 3.5 }], calories: 120, protein: 1.5, carbs: 30.8, fats: 0.4, fiber: 3.5, photoUrl: "", notes: "1 big ripe banana" }
-        ],
-        fitness: [],
-        progressPlan: []
-      };
-
-      if (!hasCache) {
-        applyHydratedData(fallbackSeed);
-        showTranslucentSyncModal(true);
-      }
-
-      const safetyTimer = setTimeout(() => {
-        showTranslucentSyncModal(false);
-        setFloatingSyncPill(false);
-        document.getElementById("syncStatusSub").textContent = hasCache ? "Cached View" : "Ready • Local View";
-      }, 4500);
-
-      try {
-        const controller = new AbortController();
-        const fetchTimeout = setTimeout(() => controller.abort(), 4200);
-        const res = await fetch(`${APP_URL}?pin=${encodeURIComponent(FAMILY_PIN)}`, {
-          method: "GET",
-          credentials: "omit",
-          signal: controller.signal
-        });
-        clearTimeout(fetchTimeout);
-        const data = await res.json();
-        clearTimeout(safetyTimer);
-
-        if (data && data.status === "error") {
-          showTranslucentSyncModal(false);
-          setFloatingSyncPill(false);
-          alert(data.message);
-          openSettings();
-          return;
         }
-
-        if (data && (Array.isArray(data.meals) || Array.isArray(data.profiles))) {
-          localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data));
-          applyHydratedData(data);
-        }
-        showTranslucentSyncModal(false);
-        setFloatingSyncPill(false);
-        const fn = localStorage.getItem("vitapulse_first_name");
-        const ln = localStorage.getItem("vitapulse_last_name");
-        document.getElementById("syncStatusSub").textContent = fn
-          ? `${[fn, ln].filter(Boolean).join(" ")} • Synced`
-          : "Synced • Google Sheets";
-      } catch (err) {
-        clearTimeout(safetyTimer);
-        console.warn("Background sync fallback:", err);
-        showTranslucentSyncModal(false);
-        setFloatingSyncPill(false);
-        document.getElementById("syncStatusSub").textContent = hasCache ? "Cached • Offline" : "Offline / Ready";
       }
-    };
-
-    document.addEventListener("DOMContentLoaded", () => {
-      const savedFn = localStorage.getItem("vitapulse_first_name");
-      const savedLn = localStorage.getItem("vitapulse_last_name");
-      if (savedFn && document.getElementById("firstNameInput")) {
-        document.getElementById("firstNameInput").value = savedFn;
-      }
-      if (savedLn && document.getElementById("lastNameInput")) {
-        document.getElementById("lastNameInput").value = savedLn;
-      }
-    });
+    }
   </script>
 </body>
 </html>
