@@ -270,20 +270,42 @@
       <!-- SUB-VIEW 1A: MEAL TRACKER -->
       <div id="tracker-nutrition-section" class="space-y-5">
 
-        <!-- Chat-to-Sheet Workflow Banner -->
-        <section class="studio-card-mint rounded-3xl p-4 flex items-center justify-between gap-3">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <span class="text-[10px] font-extrabold uppercase tracking-[0.2em] text-emerald-300">Chat-Powered Logging</span>
-              <span class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-400/30">Zero API Lag</span>
+        <!-- Record a Meal Card (Clean Studio Layout — No Chat Banner or Gemini API) -->
+        <section class="studio-card-mint rounded-3xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/85">Meal Logger</div>
+              <h2 class="font-serif-editorial font-bold text-white text-2xl mt-0.5">Record a Meal</h2>
             </div>
-            <p class="text-xs text-zinc-300 leading-relaxed">
-              Upload meal photos directly in your Gemini chat (send <strong class="text-amber-300">Before + After</strong> photos for <strong class="text-cyan-300">Hiyansh</strong>). Entries sync straight here—tap any card below to tweak quantities or duplicate across family members.
-            </p>
+            <span class="text-[10px] font-extrabold uppercase tracking-widest text-teal-200 bg-teal-500/15 border border-teal-400/30 px-3 py-1 rounded-full">Sheet Sync</span>
           </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+            <div>
+              <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">Primary Member</label>
+              <select id="mealMemberSelect" onchange="syncMemberAndDateFromForm()" class="clean-select studio-input w-full rounded-2xl px-3.5 py-2.5 text-xs font-bold"></select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">Meal Slot</label>
+              <select id="mealTypeSelect" class="clean-select studio-input w-full rounded-2xl px-3.5 py-2.5 text-xs font-bold">
+                <option value="Breakfast">Breakfast</option>
+                <option value="Pre-lunch Snack">Pre-lunch Snack</option>
+                <option value="Lunch">Lunch</option>
+                <option value="Evening Snack">Evening Snack</option>
+                <option value="Dinner">Dinner</option>
+                <option value="Late Night Snack">Late Night Snack</option>
+              </select>
+            </div>
+            <div class="col-span-2 sm:col-span-1">
+              <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">Date</label>
+              <input type="date" id="mealDateInput" onchange="syncDateFromMealInput()" class="studio-input w-full rounded-2xl px-3.5 py-2.5 text-xs font-mono-num font-bold" />
+            </div>
+          </div>
+
           <button type="button" onclick="openQuickManualLogModal()"
-            class="btn-vitality text-[10px] uppercase tracking-wider px-3.5 py-2.5 rounded-2xl flex-shrink-0">
-            + Manual Entry
+            class="w-full py-3 px-4 rounded-2xl bg-white/[0.04] hover:bg-emerald-400/10 border border-dashed border-emerald-400/45 text-emerald-200 font-bold text-xs flex items-center justify-between transition">
+            <span class="flex items-center gap-2"><span>✍️</span> No Photo? Click here to type in the details</span>
+            <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-lg bg-emerald-400/15 text-emerald-300">Item • Qty • g/ml</span>
           </button>
         </section>
 
@@ -346,12 +368,18 @@
 
         <!-- Logged Meals Feed -->
         <section class="space-y-3.5">
-          <div class="flex items-center justify-between px-1">
+          <div class="flex items-center justify-between gap-2 px-1 flex-wrap">
             <div>
               <h3 class="font-serif-editorial font-bold text-white text-xl">Meal Log</h3>
-              <p class="text-[10px] text-zinc-500">Tap ⋮ or long-press any card to edit portions, duplicate, or delete</p>
+              <p id="mealLogFilterSummary" class="text-[10px] text-zinc-400">Tap ⋮ or long-press any card to edit portions, duplicate, or delete</p>
             </div>
-            <input type="date" id="trackerFilterDate" onchange="renderTrackerLists()" class="studio-input font-mono-num text-xs font-bold rounded-xl px-3 py-1.5" />
+            <div class="flex items-center gap-1.5">
+              <select id="mealDatePresetSelect" onchange="applyMealDatePreset()" class="clean-select studio-input font-mono-num text-xs font-bold rounded-xl px-2.5 py-1.5">
+                <option value="selected">Selected Date</option>
+                <option value="all">All Dates</option>
+              </select>
+              <input type="date" id="trackerFilterDate" onchange="syncDateFromFilterInput()" class="studio-input font-mono-num text-xs font-bold rounded-xl px-2.5 py-1.5" />
+            </div>
           </div>
           <div id="mealLogsList" class="space-y-3.5"></div>
         </section>
@@ -631,16 +659,20 @@
 
   <!-- ==================== CENTERED POP-UP MODALS ==================== -->
 
-  <!-- 1. Quick Manual Meal Entry Modal (Zero External API) -->
+  <!-- 1. Manual Meal Details Pop-Up (Item | Qty | Total g/ml — Pending Chat Macro Calculation) -->
   <div id="quickManualModal" onclick="closeModal('quickManualModal')" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
     <div onclick="event.stopPropagation()" class="studio-card-mint studio-modal-box rounded-3xl max-w-lg w-full p-6 my-6 max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
         <div>
-          <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/85">Direct Sheet Entry</div>
-          <h3 class="font-serif-editorial font-bold text-white text-2xl">Add Manual Meal</h3>
+          <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/85">Manual Meal Details</div>
+          <h3 class="font-serif-editorial font-bold text-white text-2xl">Add Meal Details</h3>
         </div>
         <button onclick="closeModal('quickManualModal')" class="w-8 h-8 rounded-full bg-white/10 text-zinc-300 text-xs">✕</button>
       </div>
+
+      <p class="text-[11px] text-zinc-400 mb-3.5 leading-relaxed">
+        Enter what you had, quantity, and total g/ml. Calories & macros stay ready for chat calculation so you can ask in Gemini chat to fill macros for this entry.
+      </p>
 
       <div class="grid grid-cols-3 gap-2.5 mb-3.5">
         <div>
@@ -664,48 +696,28 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2.5 mb-3">
-        <div>
-          <label class="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Item Name</label>
-          <input type="text" id="manItemName" placeholder="e.g., Filter Coffee / Idli" class="studio-input w-full rounded-xl px-3 py-2 text-xs font-bold" />
-        </div>
-        <div>
-          <label class="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Portion / Qty</label>
-          <input type="text" id="manItemPortion" placeholder="e.g., 125 ml / 2 pcs" class="studio-input w-full rounded-xl px-3 py-2 text-xs font-bold" />
-        </div>
+      <div class="grid grid-cols-12 gap-2 text-[9px] font-bold text-zinc-400 uppercase tracking-wider px-1 mb-1.5">
+        <div class="col-span-5">Item Description</div>
+        <div class="col-span-3 text-center">Qty</div>
+        <div class="col-span-3 text-center">Total g / ml</div>
+        <div class="col-span-1"></div>
       </div>
 
-      <div class="grid grid-cols-5 gap-2 mb-3.5">
-        <div>
-          <label class="block text-[9px] font-bold text-emerald-300 uppercase mb-1">Calories</label>
-          <input type="number" id="manCal" placeholder="75" class="studio-input font-mono-num w-full rounded-xl px-2 py-2 text-xs font-bold text-center" />
-        </div>
-        <div>
-          <label class="block text-[9px] font-bold text-cyan-300 uppercase mb-1">Protein</label>
-          <input type="number" step="0.1" id="manPro" placeholder="2" class="studio-input font-mono-num w-full rounded-xl px-2 py-2 text-xs font-bold text-center" />
-        </div>
-        <div>
-          <label class="block text-[9px] font-bold text-amber-300 uppercase mb-1">Carbs</label>
-          <input type="number" step="0.1" id="manCarb" placeholder="10" class="studio-input font-mono-num w-full rounded-xl px-2 py-2 text-xs font-bold text-center" />
-        </div>
-        <div>
-          <label class="block text-[9px] font-bold text-rose-400 uppercase mb-1">Fats</label>
-          <input type="number" step="0.1" id="manFat" placeholder="3" class="studio-input font-mono-num w-full rounded-xl px-2 py-2 text-xs font-bold text-center" />
-        </div>
-        <div>
-          <label class="block text-[9px] font-bold text-violet-400 uppercase mb-1">Fiber</label>
-          <input type="number" step="0.1" id="manFib" placeholder="0" class="studio-input font-mono-num w-full rounded-xl px-2 py-2 text-xs font-bold text-center" />
-        </div>
-      </div>
+      <div id="manualDetailRowsContainer" class="space-y-2 mb-3"></div>
+
+      <button type="button" onclick="addManualDetailRow()"
+        class="w-full py-2.5 rounded-2xl bg-white/[0.05] hover:bg-emerald-400/15 border border-dashed border-emerald-400/40 text-emerald-200 font-bold text-xs flex items-center justify-center gap-1.5 transition mb-3.5">
+        <span class="text-sm font-black">+</span> Add More Row
+      </button>
 
       <div class="mb-4">
-        <label class="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Notes</label>
-        <input type="text" id="manNotes" placeholder="Optional note" class="studio-input w-full rounded-xl px-3 py-2 text-xs" />
+        <label class="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Extra Notes</label>
+        <input type="text" id="manNotes" placeholder="Optional note (e.g., homemade, less oil)" class="studio-input w-full rounded-xl px-3 py-2 text-xs" />
       </div>
 
       <div class="flex gap-2.5">
         <button onclick="closeModal('quickManualModal')" class="w-1/3 py-3 rounded-2xl bg-white/5 text-zinc-400 text-xs font-bold">Cancel</button>
-        <button onclick="saveQuickManualMeal()" class="btn-vitality w-2/3 py-3 rounded-2xl text-xs uppercase tracking-wider">Save to Sheet</button>
+        <button onclick="saveQuickManualMeal()" class="btn-vitality w-2/3 py-3 rounded-2xl text-xs uppercase tracking-wider">Save Details</button>
       </div>
     </div>
   </div>
@@ -1066,6 +1078,7 @@
 
     window.addEventListener("DOMContentLoaded", () => {
       const today = new Date().toISOString().split("T")[0];
+      document.getElementById("mealDateInput").value = today;
       document.getElementById("fitDateInput").value = today;
       document.getElementById("trackerFilterDate").value = today;
       document.getElementById("filterExactDate").value = today;
@@ -1235,8 +1248,51 @@
       `).join("");
 
       const optionsHtml = names.map(n => `<option value="${n}">${n}</option>`).join("");
+      const mealMemberEl = document.getElementById("mealMemberSelect");
+      if (mealMemberEl) {
+        mealMemberEl.innerHTML = optionsHtml;
+        if (selectedMember !== "All" && names.includes(selectedMember)) {
+          mealMemberEl.value = selectedMember;
+        }
+      }
       document.getElementById("fitMemberSelect").innerHTML = optionsHtml;
       document.getElementById("manMealMember").innerHTML = optionsHtml;
+    }
+
+    function syncMemberAndDateFromForm() {
+      const chosenMember = document.getElementById("mealMemberSelect").value;
+      if (chosenMember) {
+        selectedMember = chosenMember;
+        populateMemberUI();
+      }
+      const chosenDate = document.getElementById("mealDateInput").value;
+      if (chosenDate) {
+        document.getElementById("trackerFilterDate").value = chosenDate;
+        document.getElementById("mealDatePresetSelect").value = "selected";
+      }
+      renderTrackerLists();
+    }
+
+    function syncDateFromMealInput() {
+      const chosenDate = document.getElementById("mealDateInput").value;
+      if (chosenDate) {
+        document.getElementById("trackerFilterDate").value = chosenDate;
+        document.getElementById("mealDatePresetSelect").value = "selected";
+      }
+      renderTrackerLists();
+    }
+
+    function syncDateFromFilterInput() {
+      const chosenDate = document.getElementById("trackerFilterDate").value;
+      if (chosenDate && document.getElementById("mealDateInput")) {
+        document.getElementById("mealDateInput").value = chosenDate;
+      }
+      document.getElementById("mealDatePresetSelect").value = "selected";
+      renderTrackerLists();
+    }
+
+    function applyMealDatePreset() {
+      renderTrackerLists();
     }
 
     function selectMember(name) {
@@ -1511,52 +1567,126 @@
       }
     }
 
-    // ==================== QUICK MANUAL MEAL LOGGING ====================
+    // ==================== MANUAL MEAL DETAILS (PENDING CHAT MACROS) ====================
+    let manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
+
     function openQuickManualLogModal() {
-      if (selectedMember !== "All") {
-        document.getElementById("manMealMember").value = selectedMember;
+      const formMember = document.getElementById("mealMemberSelect")?.value;
+      const targetMem = selectedMember !== "All" ? selectedMember : (formMember || "");
+      if (targetMem) {
+        document.getElementById("manMealMember").value = targetMem;
       }
-      document.getElementById("manMealDate").value = document.getElementById("trackerFilterDate").value || new Date().toISOString().split("T")[0];
-      document.getElementById("manItemName").value = "";
-      document.getElementById("manItemPortion").value = "";
-      document.getElementById("manCal").value = "";
-      document.getElementById("manPro").value = "";
-      document.getElementById("manCarb").value = "";
-      document.getElementById("manFat").value = "";
-      document.getElementById("manFib").value = "";
+      const formSlot = document.getElementById("mealTypeSelect")?.value;
+      if (formSlot) {
+        document.getElementById("manMealSlot").value = formSlot;
+      }
+      document.getElementById("manMealDate").value =
+        document.getElementById("mealDateInput")?.value ||
+        document.getElementById("trackerFilterDate").value ||
+        new Date().toISOString().split("T")[0];
+      manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
+      renderManualDetailRows();
       document.getElementById("manNotes").value = "";
       document.getElementById("quickManualModal").classList.remove("hidden");
+    }
+
+    function addManualDetailRow() {
+      manualDetailRows.push({ name: "", qty: "1", sizeVal: "" });
+      renderManualDetailRows();
+    }
+
+    function removeManualDetailRow(idx) {
+      manualDetailRows.splice(idx, 1);
+      if (manualDetailRows.length === 0) {
+        manualDetailRows = [{ name: "", qty: "1", sizeVal: "" }];
+      }
+      renderManualDetailRows();
+    }
+
+    function updateManualDetailField(idx, field, val) {
+      if (manualDetailRows[idx]) {
+        manualDetailRows[idx][field] = val;
+      }
+    }
+
+    function renderManualDetailRows() {
+      const container = document.getElementById("manualDetailRowsContainer");
+      container.innerHTML = manualDetailRows.map((row, idx) => `
+        <div class="grid grid-cols-12 gap-2 items-center">
+          <div class="col-span-5">
+            <input type="text" value="${(row.name || "").replace(/"/g, "&quot;")}"
+              oninput="updateManualDetailField(${idx}, 'name', this.value)"
+              placeholder="e.g., Coffee"
+              class="studio-input w-full rounded-xl px-3 py-2 text-xs font-semibold" />
+          </div>
+          <div class="col-span-3">
+            <input type="number" step="0.5" min="0" value="${(row.qty || "").replace(/"/g, "&quot;")}"
+              oninput="updateManualDetailField(${idx}, 'qty', this.value)"
+              placeholder="1"
+              class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" />
+          </div>
+          <div class="col-span-3">
+            <input type="text" value="${(row.sizeVal || "").replace(/"/g, "&quot;")}"
+              oninput="updateManualDetailField(${idx}, 'sizeVal', this.value)"
+              placeholder="150 ml"
+              class="studio-input font-mono-num w-full rounded-xl px-2.5 py-2 text-xs font-bold text-center" />
+          </div>
+          <div class="col-span-1 flex justify-center">
+            <button type="button" onclick="removeManualDetailRow(${idx})"
+              class="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-bold">✕</button>
+          </div>
+        </div>
+      `).join("");
     }
 
     async function saveQuickManualMeal() {
       const member = document.getElementById("manMealMember").value;
       const meal = document.getElementById("manMealSlot").value;
       const date = document.getElementById("manMealDate").value;
-      const name = document.getElementById("manItemName").value.trim();
-      const unit_label = document.getElementById("manItemPortion").value.trim() || "1 serving";
-      const calories = Number(document.getElementById("manCal").value) || 0;
-      const protein = Number(document.getElementById("manPro").value) || 0;
-      const carbs = Number(document.getElementById("manCarb").value) || 0;
-      const fats = Number(document.getElementById("manFat").value) || 0;
-      const fiber = Number(document.getElementById("manFib").value) || 0;
-      const notes = document.getElementById("manNotes").value.trim();
+      const extraNotes = document.getElementById("manNotes").value.trim();
 
-      if (!name) return alert("Please enter the food or drink name.");
+      const validRows = manualDetailRows
+        .map(r => ({
+          name: String(r.name || "").trim(),
+          qty: Math.max(0.25, Number(r.qty) || 1),
+          sizeVal: String(r.sizeVal || "").trim()
+        }))
+        .filter(r => r.name.length > 0);
+
+      if (validRows.length === 0) {
+        return alert("Please enter at least one item description.");
+      }
+
+      const items = validRows.map(r => ({
+        name: r.name,
+        qty: r.qty,
+        unit_label: r.sizeVal ? `${r.sizeVal} (pending macros)` : "pending macros",
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fats: 0,
+        fiber: 0
+      }));
+
+      const summaryParts = validRows.map(r => `${r.qty}x ${r.name}${r.sizeVal ? ` (${r.sizeVal})` : ""}`);
+      const notes = [summaryParts.join(", "), extraNotes, "[Pending chat macro calculation]"].filter(Boolean).join(" — ");
 
       closeModal("quickManualModal");
-      showToast("Saving meal to Sheet...");
+      showToast("Saving meal details to Sheet...");
 
       const res = await postToBackend({
         action: "addManualMeal",
         member, meal, date, notes,
-        items: [{ name, qty: 1, unit_label, calories, protein, carbs, fats, fiber }]
+        items
       });
 
       if (res.status === "success" && res.entry) {
         mealLogs.unshift(res.entry);
         document.getElementById("trackerFilterDate").value = date;
+        document.getElementById("mealDateInput").value = date;
+        document.getElementById("mealDatePresetSelect").value = "selected";
         renderTrackerLists();
-        showToast("Meal logged!");
+        showToast("Meal details saved for chat macro fill!");
       } else {
         alert("Error: " + (res.message || "Could not save meal"));
       }
@@ -2022,11 +2152,20 @@
     function closeModal(id) { document.getElementById(id).classList.add("hidden"); }
 
     function renderTrackerLists() {
+      const preset = document.getElementById("mealDatePresetSelect")?.value || "selected";
       const filterDate = document.getElementById("trackerFilterDate").value;
+      const applyDateFilter = preset === "selected" && Boolean(filterDate);
+
+      const summaryEl = document.getElementById("mealLogFilterSummary");
+      if (summaryEl) {
+        const whoText = selectedMember === "All" ? "All Members" : selectedMember;
+        const whenText = applyDateFilter ? filterDate : "All Dates";
+        summaryEl.textContent = `${whoText} • ${whenText} — Tap ⋮ or long-press a card to edit or duplicate`;
+      }
 
       const filteredMeals = mealLogs.filter(m =>
         (selectedMember === "All" || m.member === selectedMember) &&
-        (!filterDate || m.date === filterDate)
+        (!applyDateFilter || m.date === filterDate)
       );
 
       let cal = 0, pro = 0, carb = 0, fat = 0, fib = 0;
