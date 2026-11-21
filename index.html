@@ -515,6 +515,30 @@
           </div>
           <div id="mealLogsList" class="space-y-3.5"></div>
         </section>
+
+        <!-- Period Macro & Goal Summary Section (Below Meal Log) -->
+        <section id="periodMacroSummarySection" class="studio-card-mint rounded-3xl p-5 space-y-4">
+          <div class="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/85">Period Macro &amp; Goal Report</div>
+              <h3 class="font-serif-editorial font-bold text-white text-2xl mt-0.5">Period Macro Summary</h3>
+              <p id="periodSummarySubtitle" class="text-[11px] text-zinc-400 mt-0.5">Daily averages vs. target for the selected period</p>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <select id="summaryPeriodType" onchange="handleSummaryPeriodChange()" class="clean-select studio-input font-mono-num text-xs font-bold rounded-xl px-2.5 py-1.5">
+                <option value="day">Specific Date</option>
+                <option value="week">Last 7 Days</option>
+                <option value="month">This Month</option>
+                <option value="year">Full Year</option>
+              </select>
+              <input type="date" id="summaryExactDate" onchange="renderPeriodMacroSummary()" class="studio-input font-mono-num text-xs font-bold rounded-xl px-2.5 py-1.5" />
+            </div>
+          </div>
+
+          <div id="periodMacroCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"></div>
+
+          <div id="periodInsightsBox" class="bg-black/35 border border-white/10 rounded-2xl p-3.5 space-y-1.5 text-xs text-zinc-300"></div>
+        </section>
       </div>
 
       <!-- SUB-VIEW 1B: FITNESS TRACKER -->
@@ -1314,27 +1338,32 @@
       return `${yr}-${mo}-${da}`;
     }
 
+    function fixStaleYear(yrNum) {
+      // Any year before 2020 in tracker records (such as 2001 from sheet locale/date quirks) is normalized to 2026
+      return yrNum < 2020 ? 2026 : yrNum;
+    }
+
     function normalizeDateStr(val) {
       if (!val) return "";
       const s = String(val).trim();
       const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
       if (isoMatch) {
-        return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
+        const yr = fixStaleYear(Number(isoMatch[1]));
+        return `${yr}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
       }
       const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
       if (slashMatch) {
         const a = Number(slashMatch[1]);
         const b = Number(slashMatch[2]);
-        // If first part > 12, it's DD/MM/YYYY (Indian/UK format)
+        const yr = fixStaleYear(Number(slashMatch[3]));
         if (a > 12) {
-          return `${slashMatch[3]}-${String(b).padStart(2, "0")}-${String(a).padStart(2, "0")}`;
+          return `${yr}-${String(b).padStart(2, "0")}-${String(a).padStart(2, "0")}`;
         }
-        // Otherwise MM/DD/YYYY (US/Sheet format)
-        return `${slashMatch[3]}-${String(a).padStart(2, "0")}-${String(b).padStart(2, "0")}`;
+        return `${yr}-${String(a).padStart(2, "0")}-${String(b).padStart(2, "0")}`;
       }
       const dt = new Date(s);
       if (!isNaN(dt.getTime())) {
-        const yr = dt.getFullYear();
+        const yr = fixStaleYear(dt.getFullYear());
         const mo = String(dt.getMonth() + 1).padStart(2, "0");
         const da = String(dt.getDate()).padStart(2, "0");
         return `${yr}-${mo}-${da}`;
@@ -1347,6 +1376,9 @@
       document.getElementById("mealDateInput").value = today;
       document.getElementById("fitDateInput").value = today;
       document.getElementById("trackerFilterDate").value = today;
+      if (document.getElementById("summaryExactDate")) {
+        document.getElementById("summaryExactDate").value = today;
+      }
       document.getElementById("filterExactDate").value = today;
       document.getElementById("manMealDate").value = today;
       document.getElementById("apiUrlInput").value = APP_URL;
@@ -2453,6 +2485,10 @@
 
       const filteredFit = fitnessLogs.filter(f => selectedMember === "All" || String(f.member || "").toLowerCase() === String(selectedMember || "").toLowerCase());
       const fitListEl = document.getElementById("fitnessLogsList");
+      if (typeof renderPeriodMacroSummary === "function") {
+        renderPeriodMacroSummary();
+      }
+
       fitListEl.innerHTML = filteredFit.length === 0
         ? `<div class="studio-card rounded-3xl p-8 text-center text-xs text-zinc-500">No workouts recorded yet.</div>`
         : filteredFit.map(f => {
@@ -2940,6 +2976,191 @@
         }
       }
     }
+
+    function handleSummaryPeriodChange() {
+      const pType = document.getElementById("summaryPeriodType")?.value || "day";
+      const dateInp = document.getElementById("summaryExactDate");
+      if (dateInp) {
+        dateInp.classList.toggle("hidden", pType !== "day");
+        if (pType === "day" && !dateInp.value) {
+          dateInp.value = document.getElementById("trackerFilterDate")?.value || getLocalDateStr(0);
+        }
+      }
+      renderPeriodMacroSummary();
+    }
+
+    function renderPeriodMacroSummary() {
+      const gridEl = document.getElementById("periodMacroCardsGrid");
+      const insightsEl = document.getElementById("periodInsightsBox");
+      const subEl = document.getElementById("periodSummarySubtitle");
+      if (!gridEl || !insightsEl) return;
+
+      const pType = document.getElementById("summaryPeriodType")?.value || "day";
+      const sumDateEl = document.getElementById("summaryExactDate");
+      const selDate = normalizeDateStr(sumDateEl?.value || document.getElementById("trackerFilterDate")?.value || getLocalDateStr(0));
+
+      const memLower = String(selectedMember || "").trim().toLowerCase();
+      const prof = profiles.find(p => String(p.name || "").trim().toLowerCase() === memLower);
+      const targetProfiles = selectedMember === "All" ? profiles : (prof ? [prof] : []);
+
+      // Period targets (scaled by days for multi-day periods when comparing totals, plus daily average targets)
+      const allMemberMeals = mealLogs.filter(m => {
+        if (selectedMember === "All") return true;
+        return String(m.member || "").trim().toLowerCase() === memLower;
+      });
+
+      let periodMeals = [];
+      let periodLabel = "";
+      let activeDaysCount = 1;
+
+      if (pType === "day") {
+        periodLabel = selDate || getLocalDateStr(0);
+        periodMeals = allMemberMeals.filter(m => normalizeDateStr(m.date) === periodLabel);
+        activeDaysCount = 1;
+      } else if (pType === "week") {
+        const cutoff = getLocalDateStr(-7);
+        periodLabel = "Last 7 Days";
+        periodMeals = allMemberMeals.filter(m => normalizeDateStr(m.date) >= cutoff);
+        const dSet = new Set(periodMeals.map(m => normalizeDateStr(m.date)).filter(Boolean));
+        activeDaysCount = Math.max(1, dSet.size || 7);
+      } else if (pType === "month") {
+        const refD = selDate || getLocalDateStr(0);
+        const ym = refD.slice(0, 7);
+        periodLabel = `Month (${ym})`;
+        periodMeals = allMemberMeals.filter(m => normalizeDateStr(m.date).startsWith(ym));
+        const dSet = new Set(periodMeals.map(m => normalizeDateStr(m.date)).filter(Boolean));
+        activeDaysCount = Math.max(1, dSet.size);
+      } else {
+        const refD = selDate || getLocalDateStr(0);
+        const yr = refD.slice(0, 4);
+        periodLabel = `Year ${yr}`;
+        periodMeals = allMemberMeals.filter(m => normalizeDateStr(m.date).startsWith(yr));
+        const dSet = new Set(periodMeals.map(m => normalizeDateStr(m.date)).filter(Boolean));
+        activeDaysCount = Math.max(1, dSet.size);
+      }
+
+      if (subEl) {
+        const who = selectedMember === "All" ? "All Members" : selectedMember;
+        subEl.textContent = `${who} • ${periodLabel} (${periodMeals.length} meal log${periodMeals.length === 1 ? "" : "s"}, ${activeDaysCount} active day${activeDaysCount === 1 ? "" : "s"})`;
+      }
+
+      let totCal = 0, totPro = 0, totCarb = 0, totFat = 0, totFib = 0;
+      periodMeals.forEach(m => {
+        totCal += Number(m.calories) || 0;
+        totPro += Number(m.protein) || 0;
+        totCarb += Number(m.carbs) || 0;
+        totFat += Number(m.fats) || 0;
+        totFib += Number(m.fiber) || 0;
+      });
+
+      const avgCal = totCal / activeDaysCount;
+      const avgPro = totPro / activeDaysCount;
+      const avgCarb = totCarb / activeDaysCount;
+      const avgFat = totFat / activeDaysCount;
+      const avgFib = totFib / activeDaysCount;
+
+      const dailyCalTarget = targetProfiles.reduce((s, p) => s + (Number(p.calTarget) || 0), 0);
+      const dailyProTarget = targetProfiles.reduce((s, p) => s + (Number(p.proteinTarget) || 0), 0);
+      const dailyCarbTarget = targetProfiles.reduce((s, p) => s + (Number(p.carbsTarget) || 185), 0);
+      const dailyFatTarget = targetProfiles.reduce((s, p) => s + (Number(p.fatsTarget) || 55), 0);
+      const dailyFibTarget = targetProfiles.reduce((s, p) => s + (Number(p.fiberTarget) || 30), 0);
+
+      // Goal-aware achievement rules:
+      // - For Calories (in lean/fat-loss profiles or overall): intake <= target is HIT (surplus above target is a MISS)
+      // - For Protein & Fiber: actual >= target is HIT (under target is a MISS)
+      // - For Carbs & Fats: within <= 105% of target is HIT (excess >105% is a MISS)
+      const isFatLossContext = prof ? isFatLossGoal(prof) : true;
+      const calHit = dailyCalTarget > 0 ? (isFatLossContext ? avgCal <= dailyCalTarget : avgCal >= dailyCalTarget * 0.85) : true;
+      const proHit = dailyProTarget > 0 ? avgPro >= dailyProTarget : true;
+      const carbHit = dailyCarbTarget > 0 ? avgCarb <= dailyCarbTarget * 1.05 : true;
+      const fatHit = dailyFatTarget > 0 ? avgFat <= dailyFatTarget * 1.05 : true;
+      const fibHit = dailyFibTarget > 0 ? avgFib >= dailyFibTarget * 0.8 : true;
+
+      const metrics = [
+        {
+          label: "Calories",
+          avgText: `${Math.round(avgCal).toLocaleString()} kcal/d`,
+          totText: `Total: ${Math.round(totCal).toLocaleString()} kcal`,
+          targetText: `Target: ${Math.round(dailyCalTarget).toLocaleString()} kcal/d`,
+          hit: calHit,
+          statusLabel: calHit ? (isFatLossContext ? "✓ Within Target" : "✓ Fueled") : "✕ Over Target"
+        },
+        {
+          label: "Protein",
+          avgText: `${avgPro.toFixed(1)} g/d`,
+          totText: `Total: ${totPro.toFixed(1)} g`,
+          targetText: `Target: ${dailyProTarget} g/d`,
+          hit: proHit,
+          statusLabel: proHit ? "✓ Target Hit" : `✕ ${(dailyProTarget - avgPro).toFixed(1)}g/d Short`
+        },
+        {
+          label: "Carbohydrates",
+          avgText: `${avgCarb.toFixed(1)} g/d`,
+          totText: `Total: ${totCarb.toFixed(1)} g`,
+          targetText: `Target: ${dailyCarbTarget} g/d`,
+          hit: carbHit,
+          statusLabel: carbHit ? "✓ On Budget" : "✕ High Carbs"
+        },
+        {
+          label: "Fats",
+          avgText: `${avgFat.toFixed(1)} g/d`,
+          totText: `Total: ${totFat.toFixed(1)} g`,
+          targetText: `Target: ${dailyFatTarget} g/d`,
+          hit: fatHit,
+          statusLabel: fatHit ? "✓ On Budget" : "✕ High Fats"
+        },
+        {
+          label: "Fiber",
+          avgText: `${avgFib.toFixed(1)} g/d`,
+          totText: `Total: ${totFib.toFixed(1)} g`,
+          targetText: `Target: ${dailyFibTarget} g/d`,
+          hit: fibHit,
+          statusLabel: fibHit ? "✓ Good Fiber" : "✕ Low Fiber"
+        }
+      ];
+
+      gridEl.innerHTML = metrics.map(item => {
+        const cardStyle = item.hit
+          ? "background: rgba(16, 185, 129, 0.11); border: 1px solid rgba(52, 211, 153, 0.42);"
+          : "background: rgba(244, 63, 94, 0.10); border: 1px solid rgba(251, 113, 133, 0.42);";
+        const pillClass = item.hit
+          ? "bg-emerald-400/20 text-emerald-200 border border-emerald-400/35"
+          : "bg-rose-500/20 text-rose-200 border border-rose-400/35";
+        const valClass = item.hit ? "text-emerald-300" : "text-rose-300";
+
+        return `
+          <div style="${cardStyle}" class="rounded-2xl p-3.5 space-y-1.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-300">${item.label}</span>
+              <span class="text-[9px] font-extrabold px-2 py-0.5 rounded-full ${pillClass}">${item.statusLabel}</span>
+            </div>
+            <div class="font-mono-num text-base font-bold ${valClass}">${item.avgText}</div>
+            <div class="font-mono-num text-[10px] text-zinc-400">${item.totText}</div>
+            <div class="font-mono-num text-[10px] text-zinc-500">${item.targetText}</div>
+          </div>
+        `;
+      }).join("");
+
+      const pCal = totPro * 4;
+      const cCal = totCarb * 4;
+      const fCal = totFat * 9;
+      const mTotal = pCal + cCal + fCal;
+      const pShare = mTotal > 0 ? Math.round((pCal / mTotal) * 100) : 0;
+      const cShare = mTotal > 0 ? Math.round((cCal / mTotal) * 100) : 0;
+      const fShare = mTotal > 0 ? Math.max(0, 100 - pShare - cShare) : 0;
+
+      const hitsCount = metrics.filter(m => m.hit).length;
+      const goalNote = prof && !isFatLossGoal(prof)
+        ? `Muscle/Growth focus: Protein target is ${dailyProTarget}g/day (${proHit ? "met" : "below target"}).`
+        : `Lean/Fat-loss focus: Calorie intake is ${avgCal > dailyCalTarget ? `${Math.round(avgCal - dailyCalTarget)} kcal/d above` : "within"} the ${dailyCalTarget} kcal/d target.`;
+
+      insightsEl.innerHTML = `
+        <div class="font-bold text-emerald-200">📊 Period Score: ${hitsCount} of ${metrics.length} Macro Targets Achieved (${periodLabel})</div>
+        <div class="text-zinc-300">• <strong>Macro Energy Split:</strong> Protein ${pShare}% • Carbs ${cShare}% • Fats ${fShare}%</div>
+        <div class="text-zinc-300">• <strong>Goal Alignment:</strong> ${goalNote}</div>
+      `;
+    }
+
   </script>
 </body>
 </html>
