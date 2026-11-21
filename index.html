@@ -316,6 +316,10 @@
           <div class="mb-3.5">
             <div id="photoPreviewBox" class="hidden relative mb-2.5 rounded-2xl overflow-hidden border border-emerald-400/30 bg-black/50 p-2">
               <img id="photoPreview" class="max-h-52 mx-auto rounded-xl object-cover" />
+              <div id="photoStatusMeter" class="mt-2 px-3 py-1.5 rounded-xl bg-emerald-400/10 border border-emerald-400/25 flex items-center justify-between text-[10px] font-bold text-emerald-200">
+                <span>✓ Photo ready locally (compressed)</span>
+                <span class="text-zinc-400 font-normal">Uploads on Save</span>
+              </div>
               <button type="button" onclick="clearSelectedPhoto()"
                 class="mt-2 w-full py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-[11px] font-bold">
                 ✕ Remove Photo
@@ -1547,8 +1551,8 @@
       const btn = document.getElementById("submitMealBtn");
       btn.disabled = true;
       btn.textContent = duplicateFor.length > 0
-        ? `Analyzing & Saving for ${1 + duplicateFor.length} Members...`
-        : "Analyzing Macros via AI...";
+        ? `Uploading Photo, Scanning Macros & Saving (${1 + duplicateFor.length})...`
+        : "Uploading Photo & Scanning Macros...";
 
       try {
         const res = await postToBackend({
@@ -1559,7 +1563,11 @@
         });
         if (res.status === "error") return alert(res.message);
 
-        mealLogs = res.meals || mealLogs;
+        if (Array.isArray(res.entries) && res.entries.length > 0) {
+          mealLogs = [...res.entries.reverse(), ...mealLogs];
+        } else if (Array.isArray(res.meals)) {
+          mealLogs = res.meals;
+        }
         clearSelectedPhoto();
         document.getElementById("mealDescInput").value = "";
         document.querySelectorAll('input[name="dupMemberCheck"]').forEach(cb => cb.checked = false);
