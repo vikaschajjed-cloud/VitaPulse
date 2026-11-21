@@ -1164,13 +1164,25 @@
       }
     }
 
-    async function postToBackend(payload) {
-      const res = await fetch(APP_URL, {
-        method: "POST",
-        credentials: "omit",
-        body: JSON.stringify({ pin: FAMILY_PIN, ...payload })
-      });
-      return await res.json();
+    async function postToBackend(payload, timeoutMs = 25000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(APP_URL, {
+          method: "POST",
+          credentials: "omit",
+          signal: controller.signal,
+          body: JSON.stringify({ pin: FAMILY_PIN, ...payload })
+        });
+        return await res.json();
+      } catch (err) {
+        if (err.name === "AbortError") {
+          throw new Error("Request timed out after 25s — please try again.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     function populateMemberUI() {
@@ -1491,12 +1503,13 @@
         const img = new Image();
         img.onload = function() {
           const canvas = document.createElement("canvas");
-          const MAX_WIDTH = 900;
-          const scale = Math.min(1, MAX_WIDTH / img.width);
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
+          const MAX_DIM = 640;
+          const maxSide = Math.max(img.width, img.height);
+          const scale = Math.min(1, MAX_DIM / maxSide);
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
           canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.65);
           compressedBase64 = dataUrl.split(",")[1];
           compressedMime = "image/jpeg";
           const preview = document.getElementById("photoPreview");
