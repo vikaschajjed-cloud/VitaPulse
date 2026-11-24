@@ -516,6 +516,20 @@
           <div id="mealLogsList" class="space-y-3.5"></div>
         </section>
 
+        <!-- Per-Meal Next-Meal Veg Pacing & Cut-Down Guide (Synced with Next_Meal_Plan tab) -->
+        <section id="nextMealPlanSection" class="studio-card-mint rounded-3xl p-5 space-y-4">
+          <div class="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300/85">Proactive Veg Macro Pacing</div>
+              <h3 class="font-serif-editorial font-bold text-white text-2xl mt-0.5">What to Have Next &amp; Cut-Down Guide</h3>
+              <p id="nextMealPlanSub" class="text-[11px] text-zinc-400 mt-0.5">Slot-by-slot vegetarian suggestions &amp; trim notes to hit protein and fiber goals</p>
+            </div>
+            <span id="nextMealPlanBadge" class="font-mono-num text-[10px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-400/30">Next_Meal_Plan</span>
+          </div>
+          <div id="nextMealRemSummary" class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center font-mono-num"></div>
+          <div id="nextMealSlotsGrid" class="space-y-3"></div>
+        </section>
+
         <!-- Period Macro & Goal Summary Section (Below Meal Log) -->
         <section id="periodMacroSummarySection" class="studio-card-mint rounded-3xl p-5 space-y-4">
           <div class="flex items-start justify-between gap-2 flex-wrap">
@@ -1251,6 +1265,7 @@
     let mealLogs = [];
     let fitnessLogs = [];
     let progressPlan = [];
+    let nextMealPlan = [];
 
     let editingMealItemsState = [];
     let charts = {};
@@ -1562,6 +1577,26 @@
       mealLogs = (data.meals || []).map(m => ({ ...m, date: normalizeDateStr(m.date) }));
       fitnessLogs = (data.fitness || []).map(f => ({ ...f, date: normalizeDateStr(f.date) }));
       progressPlan = data.progressPlan || [];
+      nextMealPlan = (data.nextMealPlan || data.Next_Meal_Plan || []).map(p => ({
+        planId: p.planId || p.Plan_ID || "",
+        date: normalizeDateStr(p.date || p.Date || ""),
+        member: String(p.member || p.Member || "").trim(),
+        afterMealType: String(p.afterMealType || p.After_Meal_Type || "").trim(),
+        nextSlot: String(p.nextSlot || p.Next_Slot || "").trim(),
+        remCalDay: Number(String(p.remCalDay ?? p.Rem_Cal_Day ?? 0).replace(/,/g, "")) || 0,
+        remPDay: Number(p.remPDay ?? p.Rem_P_Day ?? 0) || 0,
+        remCDay: Number(p.remCDay ?? p.Rem_C_Day ?? 0) || 0,
+        remFDay: Number(p.remFDay ?? p.Rem_F_Day ?? 0) || 0,
+        remFibDay: Number(p.remFibDay ?? p.Rem_Fib_Day ?? 0) || 0,
+        suggestedVegItems: String(p.suggestedVegItems || p.Suggested_Veg_Items || "").trim(),
+        slotCal: Number(String(p.slotCal ?? p.Slot_Cal ?? 0).replace(/,/g, "")) || 0,
+        slotP: Number(p.slotP ?? p.Slot_P ?? 0) || 0,
+        slotC: Number(p.slotC ?? p.Slot_C ?? 0) || 0,
+        slotF: Number(p.slotF ?? p.Slot_F ?? 0) || 0,
+        slotFib: Number(p.slotFib ?? p.Slot_Fib ?? 0) || 0,
+        cutDownNote: String(p.cutDownNote || p.Cut_Down_Note || "").trim(),
+        updatedAt: String(p.updatedAt || p.Updated_At || "").trim()
+      }));
       profiles = data.profiles && data.profiles.length > 0 ? data.profiles : [
         { id: "USR-1", name: "Vikas", gender: "Male", age: 31, weightKg: 68, heightCm: 164, waistCm: 77, bmi: 25.3, bodyFatPct: 21.3, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 62, calTarget: 1750, proteinTarget: 125, carbsTarget: 185, fatsTarget: 55, fiberTarget: 32, aiPlanSummary: "" },
         { id: "USR-2", name: "Heena", gender: "Female", age: 31, weightKg: 75, heightCm: 167, waistCm: 96, bmi: 26.9, bodyFatPct: 37.6, goal: "Get Lean & Fit", conditions: "None", targetWeightKg: 66, calTarget: 1500, proteinTarget: 105, carbsTarget: 155, fatsTarget: 50, fiberTarget: 30, aiPlanSummary: "" }
@@ -1636,7 +1671,14 @@
         fitness: [
           { id: "FIT-20261121-1", date: "2026-11-21", member: "Vikas", category: "Cardio", activity: "Brisk Walking", bodyPart: "", durationMin: 40, stepsOrVolume: 5100, caloriesBurned: 205, notes: "Evening walk" }
         ],
-        progressPlan: []
+        progressPlan: [],
+        nextMealPlan: [
+          { planId: "PLAN-20261124-VIK-EOD", date: "2026-11-24", member: "Vikas", afterMealType: "Dinner", nextSlot: "Next Day / Tomorrow Breakfast & Lunch Reset", remCalDay: -112, remPDay: 62.7, remCDay: -57.0, remFDay: -16.7, remFibDay: 3.6, suggestedVegItems: "High-protein paneer/soya/sprouts + 1 katori dal + 2 phulkas + cucumber-carrot-tomato salad (keep carbs & oil/ghee tightly measured)", slotCal: 520, slotP: 36.0, slotC: 48.0, slotF: 18.0, slotFib: 10.5, cutDownNote: "Today finished at 1,862 kcal (+112 over 1,750 target), 242g carbs (+57g over), and 71.7g fats (+16.7g over), while protein landed at 62.3g (62.7g short). Tomorrow, trim white rice/open toast/cheese/ghee portions and add paneer, soya chunks, sprouts, or Greek curd/hung curd early to hit 125g protein.", updatedAt: "2026-11-24 23:31 IST" },
+          { planId: "PLAN-20261124-SAM-LUNCH", date: "2026-11-24", member: "Samarth", afterMealType: "Breakfast", nextSlot: "Lunch", remCalDay: 1268, remPDay: 40.7, remCDay: 165.6, remFDay: 46.9, remFibDay: 17.6, suggestedVegItems: "2 small phulkas (with 1 tsp ghee) + 1 katori dal tadka + 60g paneer-green peas curry + 1/2 katori homemade curd", slotCal: 460, slotP: 16.5, slotC: 56.0, slotF: 18.0, slotFib: 7.2, cutDownNote: "Ensure paneer & dal are eaten alongside phulkas rather than plain carbs so pediatric protein stays on pace.", updatedAt: "2026-11-24 13:05 IST" },
+          { planId: "PLAN-20261124-SAM-EVS", date: "2026-11-24", member: "Samarth", afterMealType: "Breakfast", nextSlot: "Evening Snack", remCalDay: 1268, remPDay: 40.7, remCDay: 165.6, remFDay: 46.9, remFibDay: 17.6, suggestedVegItems: "1 medium banana + 1 small bowl sprouted moong & pomegranate chaat (with 10g crushed almonds/cashews)", slotCal: 230, slotP: 5.5, slotC: 36.0, slotF: 7.5, slotFib: 4.5, cutDownNote: "Skip packaged biscuits/chips in favor of fruit + sprouts + nuts for sustained growth energy.", updatedAt: "2026-11-24 13:05 IST" },
+          { planId: "PLAN-20261124-SAM-DIN", date: "2026-11-24", member: "Samarth", afterMealType: "Breakfast", nextSlot: "Dinner", remCalDay: 1268, remPDay: 40.7, remCDay: 165.6, remFDay: 46.9, remFibDay: 17.6, suggestedVegItems: "2 moong dal chillas stuffed with 40g grated paneer + 1 small bowl mixed vegetable sabzi/soup", slotCal: 360, slotP: 14.5, slotC: 40.0, slotF: 14.5, slotFib: 5.5, cutDownNote: "Pair chillas with grated paneer filling to hit Samarth's 45g daily protein target easily.", updatedAt: "2026-11-24 13:05 IST" },
+          { planId: "PLAN-20261124-SAM-LNS", date: "2026-11-24", member: "Samarth", afterMealType: "Breakfast", nextSlot: "Late Night Snack", remCalDay: 1268, remPDay: 40.7, remCDay: 165.6, remFDay: 46.9, remFibDay: 17.6, suggestedVegItems: "200ml warm whole milk (unsweetened) + 2 soaked almonds & 1 walnut half", slotCal: 175, slotP: 7.2, slotC: 11.0, slotF: 10.5, slotFib: 0.8, cutDownNote: "Keep milk unsweetened; full-day intake lands at ~1,407 kcal and ~48g protein (meeting 45g target).", updatedAt: "2026-11-24 13:05 IST" }
+        ]
       };
 
       if (!hasCache) {
@@ -2485,6 +2527,9 @@
 
       const filteredFit = fitnessLogs.filter(f => selectedMember === "All" || String(f.member || "").toLowerCase() === String(selectedMember || "").toLowerCase());
       const fitListEl = document.getElementById("fitnessLogsList");
+      if (typeof renderNextMealPlan === "function") {
+        renderNextMealPlan();
+      }
       if (typeof renderPeriodMacroSummary === "function") {
         renderPeriodMacroSummary();
       }
@@ -2975,6 +3020,118 @@
           }
         }
       }
+    }
+
+
+    function renderNextMealPlan() {
+      const slotsGrid = document.getElementById("nextMealSlotsGrid");
+      const remGrid = document.getElementById("nextMealRemSummary");
+      const subEl = document.getElementById("nextMealPlanSub");
+      const badgeEl = document.getElementById("nextMealPlanBadge");
+      if (!slotsGrid || !remGrid) return;
+
+      const filterDate = normalizeDateStr(document.getElementById("trackerFilterDate")?.value || getLocalDateStr(0));
+      const memLower = String(selectedMember || "").trim().toLowerCase();
+
+      // Match plans for selectedMember (or all members) on selected date; fallback to latest available plan date if none on selected date
+      let matchingPlans = (nextMealPlan || []).filter(p =>
+        (selectedMember === "All" || String(p.member || "").trim().toLowerCase() === memLower) &&
+        (!filterDate || normalizeDateStr(p.date) === filterDate)
+      );
+
+      let displayDate = filterDate;
+      if (matchingPlans.length === 0 && (nextMealPlan || []).length > 0) {
+        const memPlans = (nextMealPlan || []).filter(p =>
+          selectedMember === "All" || String(p.member || "").trim().toLowerCase() === memLower
+        );
+        if (memPlans.length > 0) {
+          const dates = memPlans.map(p => normalizeDateStr(p.date)).filter(Boolean).sort();
+          displayDate = dates[dates.length - 1];
+          matchingPlans = memPlans.filter(p => normalizeDateStr(p.date) === displayDate);
+        }
+      }
+
+      if (matchingPlans.length === 0) {
+        remGrid.innerHTML = "";
+        if (subEl) subEl.textContent = "Log or update a meal in chat to generate per-slot veg recommendations & cut-down notes.";
+        if (badgeEl) badgeEl.textContent = "Awaiting Plan";
+        slotsGrid.innerHTML = `<div class="bg-black/35 border border-white/10 rounded-2xl p-5 text-center text-xs text-zinc-400">No upcoming slot recommendations stored for this selection yet. Update a meal log in chat and tap ↻ to sync.</div>`;
+        return;
+      }
+
+      const first = matchingPlans[0];
+      const whoLabel = selectedMember === "All" ? "All Members" : selectedMember;
+      if (subEl) {
+        subEl.textContent = `${whoLabel} • ${displayDate} • Updated after ${first.afterMealType || "latest meal"} (${first.updatedAt || "Sheet Sync"})`;
+      }
+      if (badgeEl) {
+        badgeEl.textContent = `${matchingPlans.length} Slot${matchingPlans.length === 1 ? "" : "s"} Planned`;
+      }
+
+      // Live remaining budget for the active single member on displayDate (or sheet snapshot when All Members is selected)
+      if (selectedMember !== "All") {
+        const prof = profiles.find(p => String(p.name || "").trim().toLowerCase() === memLower);
+        const dayMeals = mealLogs.filter(m =>
+          String(m.member || "").trim().toLowerCase() === memLower &&
+          normalizeDateStr(m.date) === displayDate
+        );
+        const usedCal = dayMeals.reduce((s, m) => s + (Number(m.calories) || 0), 0);
+        const usedP = dayMeals.reduce((s, m) => s + (Number(m.protein) || 0), 0);
+        const usedC = dayMeals.reduce((s, m) => s + (Number(m.carbs) || 0), 0);
+        const usedF = dayMeals.reduce((s, m) => s + (Number(m.fats) || 0), 0);
+        const usedFib = dayMeals.reduce((s, m) => s + (Number(m.fiber) || 0), 0);
+
+        const remCal = prof ? Math.round((Number(prof.calTarget) || 0) - usedCal) : first.remCalDay;
+        const remP = prof ? Number(((Number(prof.proteinTarget) || 0) - usedP).toFixed(1)) : first.remPDay;
+        const remC = prof ? Number(((Number(prof.carbsTarget) || 185) - usedC).toFixed(1)) : first.remCDay;
+        const remF = prof ? Number(((Number(prof.fatsTarget) || 55) - usedF).toFixed(1)) : first.remFDay;
+        const remFib = prof ? Number(((Number(prof.fiberTarget) || 32) - usedFib).toFixed(1)) : first.remFibDay;
+
+        remGrid.innerHTML = `
+          <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
+            <div class="text-[9px] text-zinc-500 uppercase">Rem. Calories</div>
+            <div class="text-xs font-bold ${remCal >= 0 ? "text-emerald-300" : "text-rose-400"} mt-0.5">${remCal >= 0 ? remCal.toLocaleString() : remCal} kcal</div>
+          </div>
+          <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
+            <div class="text-[9px] text-zinc-500 uppercase">Protein Left</div>
+            <div class="text-xs font-bold text-cyan-300 mt-0.5">${remP > 0 ? remP + "g" : "✓ Hit"}</div>
+          </div>
+          <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
+            <div class="text-[9px] text-zinc-500 uppercase">Carbs Room</div>
+            <div class="text-xs font-bold ${remC >= 0 ? "text-amber-300" : "text-rose-400"} mt-0.5">${remC}g</div>
+          </div>
+          <div class="bg-black/35 rounded-2xl p-2 border border-white/5">
+            <div class="text-[9px] text-zinc-500 uppercase">Fats Room</div>
+            <div class="text-xs font-bold ${remF >= 0 ? "text-rose-300" : "text-rose-400"} mt-0.5">${remF}g</div>
+          </div>
+          <div class="col-span-2 sm:col-span-1 bg-black/35 rounded-2xl p-2 border border-white/5">
+            <div class="text-[9px] text-zinc-500 uppercase">Fiber Left</div>
+            <div class="text-xs font-bold text-violet-300 mt-0.5">${remFib > 0 ? remFib + "g" : "✓ Hit"}</div>
+          </div>
+        `;
+      } else {
+        remGrid.innerHTML = "";
+      }
+
+      slotsGrid.innerHTML = matchingPlans.map(plan => `
+        <div class="bg-black/35 border border-white/10 rounded-2xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-400/30">${plan.member} • ${plan.nextSlot}</span>
+              <span class="text-[10px] text-zinc-500">After ${plan.afterMealType}</span>
+            </div>
+            <div class="font-mono-num text-[11px] font-bold flex flex-wrap gap-2">
+              <span class="text-emerald-300">${plan.slotCal} kcal</span>
+              <span class="text-cyan-300">P:${plan.slotP}g</span>
+              <span class="text-amber-300">C:${plan.slotC}g</span>
+              <span class="text-rose-400">F:${plan.slotF}g</span>
+              <span class="text-violet-400">Fib:${plan.slotFib}g</span>
+            </div>
+          </div>
+          <div class="text-xs font-semibold text-zinc-100 leading-relaxed">🥗 ${plan.suggestedVegItems}</div>
+          ${plan.cutDownNote ? `<div class="text-[11px] text-amber-200/95 bg-amber-500/10 border border-amber-400/25 rounded-xl px-3 py-2 leading-relaxed">✂️ <strong>Trim / Watch:</strong> ${plan.cutDownNote}</div>` : ""}
+        </div>
+      `).join("");
     }
 
     function handleSummaryPeriodChange() {
